@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.local
+credentials.json
+.vercel/
+supabase/.temp/
+scripts/import_output/

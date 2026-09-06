@@ -1,0 +1,240 @@
+/* =========================
+   BOOK ORDERS (admin) TAB
+   Matches the saffron/gold temple theme used across Donations/CreditReport.
+========================= */
+
+.orders-header {
+  background: linear-gradient(135deg, #2a0d00, #4a1e00);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--ivory);
+}
+
+.orders-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.orders-header-title .icon {
+  font-size: 28px;
+}
+
+.orders-header-title h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--gold);
+}
+
+.orders-header-title p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.orders-refresh-btn {
+  padding: 9px 16px;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold-light);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.orders-refresh-btn:hover { background: rgba(245, 166, 35, 0.1); }
+.orders-refresh-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Status filter strip (clickable stat cards) ─────────────────── */
+.orders-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 700px) {
+  .orders-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+.orders-stat-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ivory);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.orders-stat-card:hover { border-color: var(--gold); }
+
+.orders-stat-card.active {
+  border-color: var(--gold);
+  background: rgba(245, 166, 35, 0.12);
+}
+
+.orders-stat-count {
+  display: block;
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--gold-light);
+  line-height: 1.2;
+}
+
+.orders-stat-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Order cards ─────────────────────────────────────────────────── */
+.orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orders-empty,
+.orders-loading,
+.orders-error {
+  text-align: center;
+  color: var(--muted);
+  padding: 32px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.orders-error { color: var(--red); border-color: rgba(224, 85, 85, 0.4); }
+
+.order-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--border);
+}
+
+.order-card.status-pending { border-left-color: var(--gold); }
+.order-card.status-confirmed { border-left-color: #4a9eff; }
+.order-card.status-fulfilled { border-left-color: var(--green); }
+.order-card.status-cancelled { border-left-color: var(--red); opacity: 0.75; }
+
+.order-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.order-card-customer strong {
+  color: var(--ivory);
+  font-size: 15px;
+}
+
+.order-card-customer .order-mobile {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.order-card-when {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.order-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--border);
+  color: var(--ivory);
+}
+
+.order-status-badge.status-pending { background: rgba(245, 166, 35, 0.18); color: var(--gold-light); }
+.order-status-badge.status-confirmed { background: rgba(74, 158, 255, 0.18); color: #8fc4ff; }
+.order-status-badge.status-fulfilled { background: rgba(76, 175, 130, 0.18); color: var(--green); }
+.order-status-badge.status-cancelled { background: rgba(224, 85, 85, 0.18); color: var(--red); }
+
+.order-card-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.order-item-chip {
+  background: var(--card, #1a0800);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--ivory);
+  white-space: nowrap;
+}
+
+.order-item-chip .qty { color: var(--gold-light); font-weight: bold; margin-right: 4px; }
+
+.order-card-notes {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  margin-bottom: 10px;
+}
+
+.order-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-action-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.order-action-btn.primary {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+.order-action-btn.primary:hover { filter: brightness(1.05); }
+
+.order-action-btn.discard {
+  background: transparent;
+  border: 1px solid rgba(224, 85, 85, 0.4);
+  color: var(--red);
+}
+
+.order-action-btn.discard:hover { background: rgba(224, 85, 85, 0.1); }
+
+.order-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.order-card-no-actions {
+  color: var(--muted);
+  font-size: 12px;
+}

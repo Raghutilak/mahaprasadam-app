@@ -1,0 +1,219 @@
+.department-credit {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 25px;
+  font-family: Arial, sans-serif;
+  color: var(--ivory);
+}
+
+.department-credit h1 {
+  margin-bottom: 25px;
+  color: var(--gold);
+}
+
+.credit-page-top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.credit-page-top-nav h1 {
+  margin-bottom: 0;
+}
+
+.credit-page-switch-button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ivory);
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+  margin-bottom: 25px;
+}
+
+.credit-page-switch-button:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.department-credit h2 {
+  margin-top: 25px;
+  color: var(--gold);
+}
+
+.page-date-time {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+
+.quick-fill-section {
+  padding: 20px;
+  margin-bottom: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.quick-fill-section button {
+  padding: 12px 25px;
+  margin-right: 12px;
+  font-size: 16px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--gold);
+  font-weight: bold;
+}
+
+.quick-fill-section button:hover {
+  background: var(--border);
+}
+
+.credit-field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.credit-field label {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: var(--gold-light);
+}
+
+.credit-field input,
+.credit-field select {
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #1a0800;
+  color: var(--ivory);
+}
+
+.credit-field input:focus,
+.credit-field select:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.search-option {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--ivory);
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-option:last-child {
+  border-bottom: none;
+}
+
+.search-option:hover {
+  background: var(--surface);
+  color: var(--gold-light);
+}
+
+.sweet-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sweet-row select,
+.sweet-row input {
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #1a0800;
+  color: var(--ivory);
+}
+
+.sweet-row span {
+  padding: 10px;
+  font-weight: bold;
+  color: var(--gold-light);
+}
+
+.department-credit > button,
+.save-credit-button {
+  padding: 12px 20px;
+  margin-top: 10px;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--gold);
+}
+
+.save-credit-button {
+  width: 100%;
+  margin-top: 20px;
+  font-size: 18px;
+  font-weight: bold;
+  background: linear-gradient(135deg, var(--saffron), var(--gold));
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(245, 166, 35, 0.25);
+}
+
+.save-credit-button:hover {
+  filter: brightness(1.05);
+}
+
+.department-credit hr {
+  margin: 25px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.daily-credit-total {
+  background: linear-gradient(135deg, #2a0d00, #4a1e00);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.daily-credit-total h2 {
+  margin: 0;
+  color: var(--gold);
+}
+
+@media (max-width: 600px) {
+  .department-credit {
+    padding: 15px;
+  }
+
+  .sweet-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sweet-row span {
+    padding: 5px;
+  }
+}

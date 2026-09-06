@@ -1,0 +1,302 @@
+.credit-report {
+  padding: 0;
+  color: var(--ivory);
+}
+
+.credit-report-back {
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ivory);
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.credit-report-back:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.credit-report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.credit-report-period-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.credit-report-period-toggle button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.credit-report-period-toggle button.active {
+  background: var(--gold);
+  color: var(--bg);
+  border-color: var(--gold);
+  font-weight: bold;
+}
+
+.credit-report-dates,
+.credit-report-dropdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.credit-report-dates label,
+.credit-report-dropdown label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.credit-report-dates input,
+.credit-report-dropdown select {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ivory);
+  font-size: 14px;
+  min-width: 160px;
+}
+
+.credit-report-status {
+  color: var(--muted);
+  padding: 12px 4px;
+}
+
+.credit-report-error {
+  color: var(--red);
+}
+
+.credit-report-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.credit-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+  font-size: 14px;
+}
+
+.credit-report-table th,
+.credit-report-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.credit-report-table thead th {
+  color: var(--gold);
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--card);
+}
+
+.credit-report-table tbody tr:hover {
+  background: rgba(245, 166, 35, 0.08);
+}
+
+.credit-report-amount {
+  color: var(--gold-light);
+  font-weight: bold;
+  text-align: right;
+}
+
+.credit-report-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px;
+  white-space: normal;
+}
+
+.credit-report-table tfoot td {
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  color: var(--gold-light);
+}
+
+@media (max-width: 720px) {
+  .credit-report-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.credit-report-success {
+  color: var(--gold-light);
+}
+
+.credit-report-actions {
+  white-space: nowrap;
+}
+
+.credit-report-actions button {
+  padding: 6px 10px;
+  margin-right: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ivory);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.credit-report-actions button:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.credit-report-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.credit-report-subrow td {
+  background: rgba(245, 166, 35, 0.04);
+  white-space: normal;
+}
+
+.credit-report-subentries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.credit-report-subentry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.credit-report-subentry button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ivory);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.credit-report-subentry button:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.credit-report-edit-panel {
+  background: var(--card);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.credit-report-edit-panel h3 {
+  margin-top: 0;
+  color: var(--gold);
+}
+
+.credit-report-edit-panel h4 {
+  color: var(--gold-light);
+  margin-bottom: 10px;
+}
+
+.credit-report-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.credit-report-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.credit-report-edit-grid input,
+.credit-report-edit-grid select {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ivory);
+  font-size: 14px;
+}
+
+.credit-report-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.credit-report-edit-row select,
+.credit-report-edit-row input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ivory);
+}
+
+.credit-report-edit-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.credit-report-save-correction {
+  background: var(--gold);
+  color: var(--bg);
+  font-weight: bold;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.credit-report-edit-actions button:not(.credit-report-save-correction) {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ivory);
+  cursor: pointer;
+}

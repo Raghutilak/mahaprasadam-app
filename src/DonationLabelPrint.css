@@ -1,0 +1,220 @@
+.label-print-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  padding: 20px 0 60px;
+}
+
+.label-print-controls {
+  width: 100%;
+  max-width: 850px;
+  background: #1a0a00;
+  border: 1px solid #7a3d00;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  color: #fff8ee;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+}
+
+.label-print-controls h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #f5a623;
+}
+
+.label-print-font-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #c8a882;
+}
+
+.label-print-font-control button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #7a3d00;
+  background: #2d1200;
+  color: #fff8ee;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.label-print-font-control button:hover {
+  border-color: #f5a623;
+  color: #f5a623;
+}
+
+.label-print-font-value {
+  min-width: 40px;
+  text-align: center;
+  color: #ffd166;
+}
+
+.label-print-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.label-print-close,
+.label-print-go {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid #7a3d00;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.label-print-close {
+  background: #2d1200;
+  color: #fff8ee;
+}
+
+.label-print-go {
+  background: #f5a623;
+  color: #1a0a00;
+  font-weight: bold;
+  border-color: #f5a623;
+}
+
+.label-print-page-wrap {
+  background: #fff;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* A4 page: 210mm x 297mm, with a 10mm margin all round */
+.label-print-page {
+  width: 190mm;
+  height: 277mm;
+  padding: 10mm;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4mm;
+  background: #fff;
+  color: #1a0a00;
+  font-family: Arial, sans-serif;
+}
+
+.label-box {
+  border: 1px dashed #888;
+  border-radius: 2mm;
+  padding: 3mm;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35em;
+  overflow: hidden;
+  text-align: center;
+}
+
+.label-box-empty {
+  border-style: dotted;
+  border-color: #ccc;
+}
+
+.label-temple {
+  font-weight: bold;
+  color: #b45309;
+  font-size: 0.85em;
+  margin-bottom: 0.2em;
+}
+
+.label-row {
+  line-height: 1.25;
+}
+
+.label-tr {
+  color: #444;
+}
+
+.label-bhoga {
+  font-weight: bold;
+  color: #b45309;
+  font-size: 1.05em;
+}
+
+.label-donor {
+  margin-top: 0.2em;
+}
+
+.label-amount {
+  font-weight: bold;
+  font-size: 1.1em;
+  margin-top: 0.2em;
+}
+
+.label-sub {
+  color: #555;
+  font-size: 0.85em;
+}
+
+.label-whatsapp-actions {
+  display: flex;
+  gap: 0.4em;
+  justify-content: center;
+  margin-top: 0.3em;
+}
+
+.label-whatsapp-btn {
+  font-size: 0.75em;
+  padding: 0.25em 0.6em;
+  border-radius: 5px;
+  border: 1px solid #25d366;
+  background: #e9fbf1;
+  color: #128c3e;
+  text-decoration: none;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.label-whatsapp-btn:hover {
+  background: #25d366;
+  color: #fff;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .label-print-overlay,
+  .label-print-overlay * {
+    visibility: visible;
+  }
+  .label-print-overlay {
+    position: absolute;
+    inset: auto;
+    top: 0;
+    left: 0;
+    background: none;
+    padding: 0;
+    display: block;
+  }
+  .label-print-controls {
+    display: none !important;
+  }
+  .label-whatsapp-actions {
+    display: none !important;
+  }
+  .label-print-page-wrap {
+    box-shadow: none;
+  }
+  @page {
+    size: A4;
+    margin: 0;
+  }
+}

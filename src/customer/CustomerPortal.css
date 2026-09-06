@@ -1,0 +1,127 @@
+/* =========================
+   CUSTOMER PORTAL (public Book Order page)
+   Matches the saffron/gold temple theme used across the admin app.
+========================= */
+
+.customer-portal {
+  min-height: 100vh;
+  padding: 30px 20px 60px;
+  max-width: 640px;
+  margin: 0 auto;
+  color: var(--ivory);
+}
+
+.customer-portal .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.customer-portal .page-header h1 {
+  font-size: 22px;
+}
+
+.customer-portal .page-header p {
+  font-size: 13px;
+}
+
+/* ── Login / signup card ─────────────────────────────────────────── */
+.customer-auth-card {
+  background: var(--card, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 30px 26px;
+  margin: 10vh auto 0;
+  max-width: 400px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+
+.customer-auth-card h1 {
+  margin: 0 0 6px;
+  color: var(--gold);
+  font-size: 24px;
+}
+
+.customer-auth-card > p {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.customer-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+
+.customer-auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.customer-auth-form input {
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #1a0800;
+  color: var(--ivory);
+  font-size: 15px;
+}
+
+.customer-auth-form input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.customer-auth-error {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0;
+}
+
+.customer-auth-message {
+  color: var(--green);
+  font-size: 13px;
+  margin: 0;
+}
+
+.customer-auth-card .save-sale-button {
+  margin-top: 4px;
+}
+
+.customer-auth-card .adjust-btn-ghost {
+  width: 100%;
+  margin-top: 12px;
+}
+
+/* Small, deliberately unobtrusive — staff shouldn't be the first thing a customer notices. */
+.staff-login-link {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding-top: 16px;
+  border: none;
+  border-top: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.staff-login-link:hover {
+  color: var(--gold-light);
+}
+
+@media (max-width: 480px) {
+  .customer-auth-card {
+    margin-top: 6vh;
+    padding: 24px 18px;
+  }
+}
