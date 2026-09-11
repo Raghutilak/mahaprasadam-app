@@ -33,8 +33,8 @@ const formatDateForDisplay = (isoDate) => {
 };
 
 // creditType: "department" | "individual"
-function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel = "← Back to Dashboard", onCorrected }) {
-  const [period, setPeriod] = useState(initialPeriod);
+function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel = "← Back to Dashboard", onCorrected, dateLocked = false }) {
+  const [period, setPeriod] = useState(dateLocked ? "daily" : initialPeriod);
 
   const [fromDate, setFromDate] = useState(todayISO());
   const [toDate, setToDate] = useState(todayISO());
@@ -94,6 +94,19 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
     if (insertErr) throw insertErr;
     return Array.isArray(created) && created[0] ? created[0].id : null;
   };
+
+  // Belt-and-braces: if this account is restricted to today only, keep the
+  // range pinned to today even if something upstream (e.g. initialPeriod)
+  // tried to set it otherwise — the disabled inputs above stop the user from
+  // changing it by hand, this stops it drifting any other way.
+  useEffect(() => {
+    if (!dateLocked) return;
+    const t = todayISO();
+    setPeriod("daily");
+    setFromDate(t);
+    setToDate(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateLocked]);
 
   // ── Load small master-data lookups once ───────────────────────────
   useEffect(() => {
@@ -644,6 +657,8 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
           <button
             className={period === "monthly" ? "active" : ""}
             onClick={() => setPeriod("monthly")}
+            disabled={dateLocked}
+            title={dateLocked ? "Your account can only view/edit today's data" : undefined}
           >
             🗓️ Monthly
           </button>
@@ -653,11 +668,23 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
           <div className="credit-report-dates">
             <label>
               From
-              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                disabled={dateLocked}
+                title={dateLocked ? "Your account can only view/edit today's data" : undefined}
+              />
             </label>
             <label>
               To
-              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                disabled={dateLocked}
+                title={dateLocked ? "Your account can only view/edit today's data" : undefined}
+              />
             </label>
           </div>
         ) : (

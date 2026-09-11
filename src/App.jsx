@@ -11,8 +11,11 @@ import SaleReport from "./SaleReport";
 import Donations from "./Donations";
 import Orders from "./Orders";
 import AdminLogin from "./AdminLogin";
+import ManagePasswords from "./ManagePasswords";
 import sb from "./supabaseClient";
 import { exportToGoogleSheet } from './lib/googleSheetExport';
+import { TABS, canAccess, normalizeStaffRow } from "./data/staffAccess";
+import { supabaseStaffAuth } from "./supabaseStaffAuthClient";
 
 function usePersistentState(key, initialValue) {
   const [value, setValue] = useState(() => {
@@ -1182,9 +1185,13 @@ function App() {
   // Deletion order respects foreign-key dependencies: child rows before parents (sale_items before sales, etc.), and — when master data is
   // included — only after every table that RESTRICTs deleting a sweet (sale_items, stock_receipt_items, inventory_*, stock_adjustments)
   // has already been cleared.
+  // "donations" is deliberately NOT in this list — it now has its own dedicated
+  // Reset Donation Data action/tab (handleResetDonationData below), separate from
+  // everything else here under Reset Other Data. Staff/password data (staff_users)
+  // is also never touched by either of these — that's managed from Manage Passwords.
   const TRANSACTION_TABLES_IN_DELETE_ORDER = [
     "sale_items", "stock_receipt_items", "department_ledger_entries", "account_ledger_entries", "credit_payments", "sales",
-    "stock_receipts", "inventory_openings", "inventory_closings", "stock_adjustments", "daily_reports", "donations",
+    "stock_receipts", "inventory_openings", "inventory_closings", "stock_adjustments", "daily_reports",
   ];
   const MASTER_TABLES_IN_DELETE_ORDER = [
     "departments", "account_holders", "carriers", "sweets", "bhoga_types", "preachers",
@@ -1194,8 +1201,8 @@ function App() {
     const confirmWord = includeMasterData ? "RESET EVERYTHING" : "RESET";
     const typed = window.prompt(
       `This will permanently delete ${includeMasterData
-        ? "ALL data including master records (sweets, departments, account holders, carriers, bhoga types, preachers)"
-        : "all transactional data (sales, credit, donations, reports, inventory) but KEEP master data"
+        ? "ALL other data including master records (sweets, departments, account holders, carriers, bhoga types, preachers) — donations and staff logins are NOT affected"
+        : "all other transactional data (sales, credit, reports, inventory) but KEEP master data — donations and staff logins are NOT affected"
       } from Supabase, and clear this device's local cache.\n\nType "${confirmWord}" to confirm:`
     );
     if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
@@ -1210,13 +1217,38 @@ function App() {
       if (error) errors.push(`${table}: ${error.message || error.status || "unknown error"}`);
     }
 
-    // Clear every sweet-* local cache key on this device too
-    Object.keys(localStorage).filter((k) => k.startsWith("sweet-")).forEach((k) => localStorage.removeItem(k));
+    // Clear every sweet-* local cache key on this device too — EXCEPT the staff
+    // Supabase Auth session key ("sweet-staff-auth"), which reset_other has no
+    // business touching (that would sign the admin themselves out mid-reset).
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith("sweet-") && k !== "sweet-staff-auth")
+      .forEach((k) => localStorage.removeItem(k));
 
     if (errors.length > 0) {
       alert(`⚠️ Cleared with some errors — you may need to re-run this:\n${errors.join("\n")}`);
     } else {
-      alert("✅ All data cleared. The app will now reload with a clean slate.");
+      alert("✅ All other data cleared. The app will now reload with a clean slate.");
+    }
+    window.location.reload();
+  };
+
+  // ── Reset Donation Data — split out on its own so it can be granted
+  // independently of every other Reset action (e.g. to Dayavan Prabhu,
+  // who has Donations access but not the rest of Reset).
+  const handleResetDonationData = async () => {
+    const confirmWord = "RESET DONATIONS";
+    const typed = window.prompt(
+      `This will permanently delete ALL donation records from Supabase.\n\nType "${confirmWord}" to confirm:`
+    );
+    if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
+
+    const { error } = await sb.from("donations").deleteAll();
+    localStorage.removeItem("sweet-donations");
+
+    if (error) {
+      alert(`⚠️ Could not clear donation data: ${error.message || error.status || "unknown error"}`);
+    } else {
+      alert("✅ Donation data cleared.");
     }
     window.location.reload();
   };
@@ -1442,11 +1474,68 @@ function App() {
   const [customerSession, setCustomerSession] = useState(undefined); // undefined = still checking
   const [showCustomerPortal, setShowCustomerPortal] = useState(false);
 
-  // Whether THIS browser/device is logged in as staff. Persisted so staff don't have to
-  // log in again every time they reopen the app on their own device — but a brand-new
-  // device (any customer's phone) always starts as `false` and lands on Book Order.
-  const [isStaff, setIsStaff] = usePersistentState("sweet-is-staff", false);
+  // The logged-in staff member's profile (name/email/mobile/role/allowedTabs),
+  // or null if this device isn't logged in as staff. Backed by a real
+  // Supabase Auth session (supabaseStaffAuth) — not merely a localStorage
+  // flag — so the login is a real, revocable, token-based session, same
+  // trust model customers already get. `staffAuthLoading` covers the brief
+  // moment on first load while we check for an existing session, so we
+  // don't flash the Book Order page at an already-logged-in staff member.
+  const [currentStaff, setCurrentStaff] = useState(null);
+  const [staffAuthLoading, setStaffAuthLoading] = useState(true);
+  const isStaff = !!currentStaff;
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+
+  const loadStaffProfile = async (userId, fallbackRole) => {
+    const { data: profileRow, error } = await supabaseStaffAuth.from("staff_users").select("*").eq("id", userId).single();
+    if (error || !profileRow) { setCurrentStaff(null); return; }
+    // setCurrentStaff(normalizeStaffRow({ ...profileRow, role: fallbackRole || profileRow.role }));
+
+    if (fallbackRole !== "admin" && fallbackRole !== "staff") {
+      setCurrentStaff(null);
+      return;
+    }
+
+    setCurrentStaff(
+      normalizeStaffRow({
+        ...profileRow,
+        role: fallbackRole,
+      })
+    );
+
+
+  };
+
+  useEffect(() => {
+    supabaseStaffAuth.auth.getSession().then(({ data }) => {
+      const session = data.session;
+      if (session?.user) loadStaffProfile(session.user.id, session.user.app_metadata?.role);
+      else setCurrentStaff(null);
+      setStaffAuthLoading(false);
+    });
+    const { data: listener } = supabaseStaffAuth.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) loadStaffProfile(session.user.id, session.user.app_metadata?.role);
+      else setCurrentStaff(null);
+    });
+    return () => listener.subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStaffLogout = async () => {
+    await supabaseStaffAuth.auth.signOut();
+    setCurrentStaff(null);
+  };
+
+  // If a staff member's allowed tabs change (or they're on a page a role
+  // shouldn't see), bounce them back to the Dashboard rather than leaving
+  // them stuck on a blank page.
+  useEffect(() => {
+    if (isStaff && page !== "dashboard" && page !== "my-password" && !canAccess(currentStaff, page)
+        && !(page === "individual-credit" && canAccess(currentStaff, TABS.CREDIT))) {
+      setPage("dashboard");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStaff, page, isStaff]);
 
   useEffect(() => {
     supabaseAuth.auth.getSession().then(({ data }) => setCustomerSession(data.session));
@@ -1458,9 +1547,13 @@ function App() {
 
   // Book Order is the app's public landing page — anyone opening the app for the first
   // time (or any customer's own device) lands here. Staff only see the admin dashboard
-  // after logging in via the Staff Login link below, and that login is remembered on
-  // their device from then on (see `isStaff` above). Staff can also jump back into this
-  // view on purpose (to preview it, or book on behalf of a walk-in) via `showCustomerPortal`.
+  // after logging in via the Staff Login link below, and that login is a real Supabase
+  // Auth session, restored automatically on their own device (see `isStaff` above).
+  // Staff can also jump back into this view on purpose (to preview it, or book on
+  // behalf of a walk-in) via `showCustomerPortal`. While we're still checking for an
+  // existing staff session on first load, show nothing rather than flashing Book Order.
+  if (staffAuthLoading) return null;
+
   if (!isStaff || showCustomerPortal) {
     return (
       <>
@@ -1472,7 +1565,7 @@ function App() {
         {showAdminLogin && (
           <AdminLogin
             onCancel={() => setShowAdminLogin(false)}
-            onSuccess={() => { setIsStaff(true); setShowCustomerPortal(false); setShowAdminLogin(false); }}
+            onSuccess={(staffRecord) => { setCurrentStaff(staffRecord); setShowCustomerPortal(false); setShowAdminLogin(false); setPage("dashboard"); }}
           />
         )}
       </>
@@ -1505,35 +1598,73 @@ function App() {
         </div>
 
         <nav>
-          <button className={page === "dashboard" ? "active" : ""} onClick={() => navigateTo("dashboard")}>📊 Dashboard</button>
-          <button className={ page === "receive" ? "active" : "" } onClick={() => navigateTo("receive") } >
-            📦 Receive
-          </button>
+          {canAccess(currentStaff, TABS.DASHBOARD) && (
+            <button className={page === "dashboard" ? "active" : ""} onClick={() => navigateTo("dashboard")}>📊 Dashboard</button>
+          )}
 
-          <button className={ page === "cash" ? "active" : "" } onClick={() => navigateTo("cash") } >
-            💵 Cash Sale
-          </button>
+          {canAccess(currentStaff, TABS.RECEIVE) && (
+            <button className={ page === "receive" ? "active" : "" } onClick={() => navigateTo("receive") } >
+              📦 Receive
+            </button>
+          )}
 
-          <button className={ page === "paytm" ? "active" : "" } onClick={() => navigateTo("paytm") } >
-            📱 Paytm Sale
-          </button>
-  
-          <button
-            className={ (page === "credit" || page === "individual-credit") ? "active" : "" }
-            onClick={() => navigateTo("credit")}
-          >
-            📋 Credit Sale
-          </button>
+          {canAccess(currentStaff, TABS.CASH) && (
+            <button className={ page === "cash" ? "active" : "" } onClick={() => navigateTo("cash") } >
+              💵 Cash Sale
+            </button>
+          )}
 
-          <button className={page === "payment" ? "active" : ""} onClick={() => navigateTo("payment")}>💰 Credit Recovery</button>
-          <button className={page === "donations" ? "active" : ""} onClick={() => navigateTo("donations")}>🙏 Donations</button>
-          <button className={page === "orders" ? "active" : ""} onClick={() => navigateTo("orders")}>📦 Book Orders</button>
-          <button className={page === "reports" ? "active" : ""} onClick={() => navigateTo("reports")}>📄 Reports</button>
-          <button className={page === "close" ? "active" : ""} onClick={() => navigateTo("close")}>🔒 Close Day</button>
-          <button className={page === "reset" ? "active" : ""} onClick={() => navigateTo("reset")}>🧹 Reset Data</button>
-          <button className={page === "export" ? "active" : ""} onClick={handleGoogleSheetExport} disabled={exporting} > 📊 {exporting ? "Exporting..." : "Export to Google Sheet"} </button>
+          {canAccess(currentStaff, TABS.PAYTM) && (
+            <button className={ page === "paytm" ? "active" : "" } onClick={() => navigateTo("paytm") } >
+              📱 Paytm Sale
+            </button>
+          )}
+
+          {canAccess(currentStaff, TABS.CREDIT) && (
+            <button
+              className={ (page === "credit" || page === "individual-credit") ? "active" : "" }
+              onClick={() => navigateTo("credit")}
+            >
+              📋 Credit Sale
+            </button>
+          )}
+
+          {canAccess(currentStaff, TABS.PAYMENT) && (
+            <button className={page === "payment" ? "active" : ""} onClick={() => navigateTo("payment")}>💰 Credit Recovery</button>
+          )}
+          {/* Donations tab — access limited to admin + whichever staff have been explicitly
+              granted it (currently just Dayavan Prabhu). Reset Donation Data below is gated
+              the same way, since the two go together. */}
+          {canAccess(currentStaff, TABS.DONATIONS) && (
+            <button className={page === "donations" ? "active" : ""} onClick={() => navigateTo("donations")}>🙏 Donations</button>
+          )}
+          {/* Book Order is available to every staff member regardless of role — canAccess()
+              always returns true for TABS.ORDERS once logged in. */}
+          {canAccess(currentStaff, TABS.ORDERS) && (
+            <button className={page === "orders" ? "active" : ""} onClick={() => navigateTo("orders")}>📦 Book Orders</button>
+          )}
+          {canAccess(currentStaff, TABS.REPORTS) && (
+            <button className={page === "reports" ? "active" : ""} onClick={() => navigateTo("reports")}>📄 Reports</button>
+          )}
+          {canAccess(currentStaff, TABS.CLOSE) && (
+            <button className={page === "close" ? "active" : ""} onClick={() => navigateTo("close")}>🔒 Close Day</button>
+          )}
+          {canAccess(currentStaff, TABS.RESET_DONATION) && (
+            <button className={page === "reset_donation" ? "active" : ""} onClick={() => navigateTo("reset_donation")}>🧹 Reset Donation Data</button>
+          )}
+          {canAccess(currentStaff, TABS.RESET_OTHER) && (
+            <button className={page === "reset_other" ? "active" : ""} onClick={() => navigateTo("reset_other")}>🧹 Reset Other Data</button>
+          )}
+          {/* My Password / Manage Passwords — always available to every logged-in staff member
+              (to change their own password); admin additionally sees & edits everyone's. */}
+          <button className={page === "my-password" ? "active" : ""} onClick={() => navigateTo("my-password")}>
+            🔑 {currentStaff?.role === "admin" ? "Manage Passwords" : "My Password"}
+          </button>
+          {canAccess(currentStaff, TABS.EXPORT) && (
+            <button className={page === "export" ? "active" : ""} onClick={handleGoogleSheetExport} disabled={exporting} > 📊 {exporting ? "Exporting..." : "Export to Google Sheet"} </button>
+          )}
           <button className="customer-portal-link" onClick={() => setShowCustomerPortal(true)}>🛒 Preview Customer Book Order</button>
-          <button className="customer-portal-link" onClick={() => setIsStaff(false)}>🔒 Staff Logout</button>
+          <button className="customer-portal-link" onClick={handleStaffLogout}>🔒 Staff Logout</button>
 
         </nav>
       </aside>
@@ -1881,24 +2012,48 @@ function App() {
           </>
         )}
 
-        {/* *******************************  RESET DATA — for trials/testing  *************************************** */}
+        {/* *******************************  RESET DONATION DATA  *************************************** */}
 
-        {page === "reset" && (
+        {page === "reset_donation" && canAccess(currentStaff, TABS.RESET_DONATION) && (
           <>
             <header className="page-header">
               <div>
-                <h1>🧹 Reset Data</h1>
-                <p>For trials and testing — wipe data and start with a clean slate</p>
+                <h1>🧹 Reset Donation Data</h1>
+                <p>Wipe donation records only — everything else is untouched</p>
+              </div>
+            </header>
+
+            <section className="batch-card">
+              <h2>⚠️ Clear All Donation Records</h2>
+              <p>
+                Deletes every row in the donations table from Supabase and clears this device's
+                cached donations. Sales, credit, reports, inventory, and staff logins are not affected.
+              </p>
+              <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #e05555, #ff6b00)" }} onClick={handleResetDonationData}>
+                🧹 Clear All Donation Data
+              </button>
+            </section>
+          </>
+        )}
+
+        {/* *******************************  RESET OTHER DATA — for trials/testing  *************************************** */}
+
+        {page === "reset_other" && canAccess(currentStaff, TABS.RESET_OTHER) && (
+          <>
+            <header className="page-header">
+              <div>
+                <h1>🧹 Reset Other Data</h1>
+                <p>For trials and testing — wipe data and start with a clean slate (donations and staff logins are not affected)</p>
               </div>
             </header>
 
             <section className="batch-card">
               <h2>⚠️ Clear Transactional Data</h2>
               <p>
-                Deletes all sales, donations, credit sales, recovery payments, ledger entries,
+                Deletes all sales, credit sales, recovery payments, ledger entries,
                 daily reports, and inventory records from Supabase — but keeps master data
-                (sweets, departments, account holders, carriers, Bhoga types, preachers) intact.
-                Also clears this device's local cache.
+                (sweets, departments, account holders, carriers, Bhoga types, preachers), donation
+                records, and staff logins intact. Also clears this device's local cache.
               </p>
               <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #e05555, #ff6b00)" }} onClick={() => handleResetAllData(false)}>
                 🧹 Clear Transactional Data Only
@@ -1906,18 +2061,25 @@ function App() {
             </section>
 
             <section className="batch-card">
-              <h2>☢️ Clear Everything (Including Master Data)</h2>
+              <h2>☢️ Clear Everything Else (Including Master Data)</h2>
               <p>
                 Deletes everything above, PLUS all master data — sweets, departments, account
-                holders, carriers, Bhoga types, and preachers. Use this for a fully clean slate
-                between test data sets. Master data will be re-seeded from the app's built-in
-                defaults the next time you use each page.
+                holders, carriers, Bhoga types, and preachers. Donation records and staff logins
+                are still not affected — use Reset Donation Data or Manage Passwords for those.
+                Master data will be re-seeded from the app's built-in defaults the next time you
+                use each page.
               </p>
               <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #7a0000, #e05555)" }} onClick={() => handleResetAllData(true)}>
                 ☢️ Clear Everything Including Master Data
               </button>
             </section>
           </>
+        )}
+
+        {/* *******************************  MY PASSWORD / MANAGE PASSWORDS  *************************************** */}
+
+        {page === "my-password" && (
+          <ManagePasswords currentStaff={currentStaff} onSelfUpdated={setCurrentStaff} />
         )}
 
        {/* ******************************************* RECEIVE **************************************** */}
@@ -2413,6 +2575,7 @@ function App() {
               <DailyReport
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
+                dateLocked={!!currentStaff?.restrictReportsToToday}
                 openingStockValue={openingStockValue}
                 receivedTotal={reportReceivedStockValue}
                 issuedValue={outgoingValue}
@@ -2432,6 +2595,7 @@ function App() {
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
                 onCorrected={refreshDailyStockAndTotals}
+                dateLocked={!!currentStaff?.restrictReportsToToday}
               />
             )}
 
@@ -2441,6 +2605,7 @@ function App() {
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
                 onCorrected={refreshDailyStockAndTotals}
+                dateLocked={!!currentStaff?.restrictReportsToToday}
               />
             )}
 
@@ -2451,6 +2616,7 @@ function App() {
                 backLabel="← Back to Reports"
                 onBack={() => setReportsView("daily")}
                 onCorrected={() => { refreshDailyStockAndTotals(); refreshDues(); }}
+                dateLocked={!!currentStaff?.restrictReportsToToday}
               />
             )}
 
@@ -2461,6 +2627,7 @@ function App() {
                 backLabel="← Back to Reports"
                 onBack={() => setReportsView("daily")}
                 onCorrected={() => { refreshDailyStockAndTotals(); refreshDues(); }}
+                dateLocked={!!currentStaff?.restrictReportsToToday}
               />
             )}
           </>

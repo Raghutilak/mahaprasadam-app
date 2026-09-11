@@ -17,7 +17,7 @@ const prices = {
 // saleType: "cash" | "upi" — "upi" covers BOTH channels the Paytm Sale entry form can save under
 // (payment_method "paytm" or "upi"), so this report matches everything that section records —
 // same set of rows the Dashboard's own paytmTotal already sums.
-function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected }) {
+function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, dateLocked = false }) {
   const [sales, setSales] = useState([]);
   const [itemsBySaleId, setItemsBySaleId] = useState({});
   const [sweetIdToName, setSweetIdToName] = useState({});
@@ -282,7 +282,13 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected }) {
         <div className="credit-report-dates">
           <label>
             Date
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              disabled={dateLocked}
+              title={dateLocked ? "Your account can only view/edit today's report" : undefined}
+            />
           </label>
         </div>
       </div>
