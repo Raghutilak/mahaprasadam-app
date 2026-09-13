@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { supabaseAuth } from "../supabaseAuthClient";
 
-// `customer` is { email, mobile } for a logged-in account, or the guest's typed-in
-// details for a guest checkout. `isGuest` controls whether the email field is
-// editable (guests have no account email to lock it to) and whether we show the
-// "orders aren't tracked" note.
-export default function BookOrder({ customer, isGuest }) {
+// `customer` is always a logged-in account's { email, mobile } now — guest
+// checkout was removed (see CustomerPortal.jsx) so there's no untraceable,
+// unauthenticated path into the orders table anymore.
+export default function BookOrder({ customer }) {
   const [stock, setStock] = useState([]); // [{ sweet_id, sweet_name, available }]
   const [quantities, setQuantities] = useState({});
-  const [email, setEmail] = useState(customer?.email || "");
   const [mobile, setMobile] = useState(customer?.mobile || "");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -47,27 +45,30 @@ export default function BookOrder({ customer, isGuest }) {
       .map(([sweet_id, quantity]) => ({ sweet_id, quantity }));
 
     if (items.length === 0) { setResult({ ok: false, message: "Please choose a quantity for at least one item." }); return; }
-    if (isGuest && !email.trim()) { setResult({ ok: false, message: "Please enter your email address." }); return; }
     if (!mobile.trim()) { setResult({ ok: false, message: "Please enter a mobile number so we can reach you." }); return; }
+
+    if (!customer?.email) {
+        setResult({
+          ok: false,
+          message: "Customer account information is missing. Please sign in again.",
+        });
+        return;
+    }
 
     setSubmitting(true);
     setResult(null);
+
     try {
-      // Works the same way whether it came from a logged-in account or a guest — the RPC
-      // takes the email/mobile straight from the form, it doesn't need an auth session for
-      // that. (For a guest with no session, the `orders`/`order_items` tables' RLS still
-      // needs to permit an anonymous insert here, same note as the admin Orders page.)
+      // The RPC runs under the logged-in customer's own authenticated session
+      // (supabaseAuth) — create_customer_order should tie the order to
+      // auth.uid() server-side rather than trusting the email in this payload.
+
       const { error } = await supabaseAuth.rpc("create_customer_order", {
-        p_order: { customer_email: email.trim(), customer_mobile: mobile.trim(), notes: null },
+        p_order: { customer_email: customer.email, customer_mobile: mobile.trim(), notes: null },
         p_items: items,
       });
       if (error) throw error;
-      setResult({
-        ok: true,
-        message: isGuest
-          ? "✅ Order booked! We'll email or call you shortly with the amount to pay and pickup/delivery details. (Guest orders aren't listed under \"My Orders\" — keep an eye on your email or phone.)"
-          : "✅ Order booked! We'll email or call you shortly with the amount to pay and pickup/delivery details.",
-      });
+      setResult({ ok: true, message: "✅ Order booked! We'll email or call you shortly with the amount to pay and pickup/delivery details." });
       setQuantities({});
     } catch (e) {
       console.error("Order booking error:", e);
@@ -100,16 +101,6 @@ export default function BookOrder({ customer, isGuest }) {
           />
         </div>
       ))}
-
-      {isGuest && (
-        <div className="item-row">
-          <div className="item-name">
-            <strong>Your Email</strong>
-            <span>So we can send order updates</span>
-          </div>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email Address" />
-        </div>
-      )}
 
       <div className="item-row">
         <div className="item-name">

@@ -917,15 +917,9 @@ function App() {
     }
 
     try {
-      // Replace every item row for this receipt — delete then reinsert — so a repeated correction never leaves stale
-      // duplicate line items behind, and the receipt total always matches exactly what's on screen.
-      const { error: delError } = await sb.from("stock_receipt_items").delete("receipt_id", batch.receiptId);
-      if (delError) throw delError;
-      const newItemRows = nonZeroItems.map(([name, qty]) => ({
-        receipt_id: batch.receiptId, sweet_id: sweetIdByName[name], quantity: qty, rate: prices[name] || 0,
-      }));
-      const { error: insError } = await sb.from("stock_receipt_items").insert(newItemRows);
-      if (insError) throw insError;
+      const items = nonZeroItems.map(([name, qty]) => ({ sweet_id: sweetIdByName[name], quantity: qty, rate: prices[name] || 0 }));
+      const { error: rpcErr } = await sb.rpc("correct_stock_receipt", { p_receipt_id: batch.receiptId, p_items: items });
+      if (rpcErr) throw rpcErr;
     } catch (e) {
       console.error("Receipt correction save error:", e);
       alert(`❌ Could not save this correction to Supabase (${e.message || "unknown error"}). Please try again.`);
@@ -1185,18 +1179,14 @@ function App() {
   // Deletion order respects foreign-key dependencies: child rows before parents (sale_items before sales, etc.), and — when master data is
   // included — only after every table that RESTRICTs deleting a sweet (sale_items, stock_receipt_items, inventory_*, stock_adjustments)
   // has already been cleared.
-  // "donations" is deliberately NOT in this list — it now has its own dedicated
-  // Reset Donation Data action/tab (handleResetDonationData below), separate from
-  // everything else here under Reset Other Data. Staff/password data (staff_users)
-  // is also never touched by either of these — that's managed from Manage Passwords.
-  const TRANSACTION_TABLES_IN_DELETE_ORDER = [
-    "sale_items", "stock_receipt_items", "department_ledger_entries", "account_ledger_entries", "credit_payments", "sales",
-    "stock_receipts", "inventory_openings", "inventory_closings", "stock_adjustments", "daily_reports",
-  ];
-  const MASTER_TABLES_IN_DELETE_ORDER = [
-    "departments", "account_holders", "carriers", "sweets", "bhoga_types", "preachers",
-  ];
-
+  // ⚠️ These both now go through admin-only RPCs (see migration
+  // 20260914000000) rather than raw per-table deleteAll() calls — a bulk
+  // wipe is exactly the kind of destructive operation that shouldn't be a
+  // standing grant, even to staff whose tab happens to show this page.
+  // NOTE: this also means Reset Donation Data is now admin-only in
+  // practice, even though the "reset_donation" tab can still be shown to
+  // a specific staff member (e.g. Dayavan Prabhu) — see the button's
+  // disabled state below.
   const handleResetAllData = async (includeMasterData) => {
     const confirmWord = includeMasterData ? "RESET EVERYTHING" : "RESET";
     const typed = window.prompt(
@@ -1207,15 +1197,7 @@ function App() {
     );
     if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
 
-    const tables = includeMasterData
-      ? [...TRANSACTION_TABLES_IN_DELETE_ORDER, ...MASTER_TABLES_IN_DELETE_ORDER]
-      : TRANSACTION_TABLES_IN_DELETE_ORDER;
-
-    const errors = [];
-    for (const table of tables) {
-      const { error } = await sb.from(table).deleteAll();
-      if (error) errors.push(`${table}: ${error.message || error.status || "unknown error"}`);
-    }
+    const { error } = await sb.rpc("admin_reset_other_data", { p_include_master: includeMasterData });
 
     // Clear every sweet-* local cache key on this device too — EXCEPT the staff
     // Supabase Auth session key ("sweet-staff-auth"), which reset_other has no
@@ -1224,17 +1206,15 @@ function App() {
       .filter((k) => k.startsWith("sweet-") && k !== "sweet-staff-auth")
       .forEach((k) => localStorage.removeItem(k));
 
-    if (errors.length > 0) {
-      alert(`⚠️ Cleared with some errors — you may need to re-run this:\n${errors.join("\n")}`);
+    if (error) {
+      alert(`⚠️ Could not clear data: ${error.message || error.status || "unknown error"}`);
     } else {
       alert("✅ All other data cleared. The app will now reload with a clean slate.");
     }
     window.location.reload();
   };
 
-  // ── Reset Donation Data — split out on its own so it can be granted
-  // independently of every other Reset action (e.g. to Dayavan Prabhu,
-  // who has Donations access but not the rest of Reset).
+  // ── Reset Donation Data — admin-only RPC (see note above).
   const handleResetDonationData = async () => {
     const confirmWord = "RESET DONATIONS";
     const typed = window.prompt(
@@ -1242,7 +1222,7 @@ function App() {
     );
     if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
 
-    const { error } = await sb.from("donations").deleteAll();
+    const { error } = await sb.rpc("admin_reset_donation_data", {});
     localStorage.removeItem("sweet-donations");
 
     if (error) {
@@ -1293,7 +1273,7 @@ function App() {
   const closeAvailable = new Date().getHours() > 20 || (new Date().getHours() === 20 && new Date().getMinutes() >= 30);
 
   const closeDay = async () => {
-    // if (!closeAvailable) { alert("Close Day is available only at or after 8:30 PM."); return; }
+    if (!closeAvailable) { alert("Close Day is available only at or after 8:40 PM."); return; }
 
     // Block the entire close-day process if any sweet's Supabase id hasn't resolved yet — otherwise inventory_closings/inventory_openings would
     // silently drop that sweet, corrupting today's closing AND tomorrow's opening stock with no visible error.
@@ -1489,21 +1469,9 @@ function App() {
   const loadStaffProfile = async (userId, fallbackRole) => {
     const { data: profileRow, error } = await supabaseStaffAuth.from("staff_users").select("*").eq("id", userId).single();
     if (error || !profileRow) { setCurrentStaff(null); return; }
-    // setCurrentStaff(normalizeStaffRow({ ...profileRow, role: fallbackRole || profileRow.role }));
 
-    if (fallbackRole !== "admin" && fallbackRole !== "staff") {
-      setCurrentStaff(null);
-      return;
-    }
-
-    setCurrentStaff(
-      normalizeStaffRow({
-        ...profileRow,
-        role: fallbackRole,
-      })
-    );
-
-
+    if (fallbackRole !== "admin" && fallbackRole !== "staff") { setCurrentStaff(null); return; }
+    setCurrentStaff( normalizeStaffRow({ ...profileRow, role: fallbackRole, }) );
   };
 
   useEffect(() => {
@@ -2029,9 +1997,15 @@ function App() {
                 Deletes every row in the donations table from Supabase and clears this device's
                 cached donations. Sales, credit, reports, inventory, and staff logins are not affected.
               </p>
-              <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #e05555, #ff6b00)" }} onClick={handleResetDonationData}>
-                🧹 Clear All Donation Data
-              </button>
+              {currentStaff?.role === "admin" ? (
+                <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #e05555, #ff6b00)" }} onClick={handleResetDonationData}>
+                  🧹 Clear All Donation Data
+                </button>
+              ) : (
+                <p style={{ opacity: 0.8 }}>
+                  🔒 This bulk-clear action is admin-only. Ask an admin to run it if donation records need to be reset.
+                </p>
+              )}
             </section>
           </>
         )}
@@ -2238,6 +2212,7 @@ function App() {
             )}
 
             {/* ---------- (c) RECENT RECEIVE TRANSACTIONS ---------- */}
+
             <section className="batch-card" style={{ marginTop: 15 }}>
               <div className="batch-header">
                 <h2>🕘 Recent Receive Transactions</h2>
@@ -2575,7 +2550,6 @@ function App() {
               <DailyReport
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
-                dateLocked={!!currentStaff?.restrictReportsToToday}
                 openingStockValue={openingStockValue}
                 receivedTotal={reportReceivedStockValue}
                 issuedValue={outgoingValue}

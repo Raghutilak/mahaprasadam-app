@@ -34,7 +34,7 @@ const formatDateForDisplay = (isoDate) => {
 
 // creditType: "department" | "individual"
 function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel = "← Back to Dashboard", onCorrected, dateLocked = false }) {
-  const [period, setPeriod] = useState(dateLocked ? "daily" : initialPeriod);
+  const [period, setPeriod] = useState(initialPeriod);
 
   const [fromDate, setFromDate] = useState(todayISO());
   const [toDate, setToDate] = useState(todayISO());
@@ -94,19 +94,6 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
     if (insertErr) throw insertErr;
     return Array.isArray(created) && created[0] ? created[0].id : null;
   };
-
-  // Belt-and-braces: if this account is restricted to today only, keep the
-  // range pinned to today even if something upstream (e.g. initialPeriod)
-  // tried to set it otherwise — the disabled inputs above stop the user from
-  // changing it by hand, this stops it drifting any other way.
-  useEffect(() => {
-    if (!dateLocked) return;
-    const t = todayISO();
-    setPeriod("daily");
-    setFromDate(t);
-    setToDate(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateLocked]);
 
   // ── Load small master-data lookups once ───────────────────────────
   useEffect(() => {
@@ -473,24 +460,6 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
     setActionMsg("");
 
     try {
-      // Guard against correcting an entry that's already been deleted elsewhere (another device/tab
-      // open on this same report, or the admin Reset tool) since this report's list was loaded. Without
-      // this check, the UPDATE and DELETE below would silently affect zero rows — Postgres doesn't error
-      // on a WHERE clause that matches nothing — and only the final INSERT into sale_items would fail,
-      // with a raw foreign-key-violation message that doesn't explain what actually happened.
-      const { data: stillExists, error: existsErr } = await sb
-        .from("sales")
-        .selectFilter("id", `id=eq.${editingSale.id}`);
-      if (existsErr) throw existsErr;
-      if (!Array.isArray(stillExists) || stillExists.length === 0) {
-        setActionError("This entry no longer exists — it looks like it was already deleted (possibly on another device). Refreshing the list…");
-        setEditingSale(null);
-        setEditForm(null);
-        setExpandedGroupKey(null);
-        setReloadKey((k) => k + 1);
-        return;
-      }
-
       const isDepartment = creditType === "department";
       let departmentId = editingSale.department_id;
       let carrierId = editingSale.carrier_id;
@@ -505,57 +474,35 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
         accountHolderId = await getOrCreateMasterId("account_holders", editForm.individualName, { mobile: editForm.individualMobile || null });
       }
 
-      const newTotal = validItems.reduce((t, it) => t + (prices[it.sweet] || 0) * Number(it.quantity), 0);
-
       const combinedNotes = isDepartment
         ? (
             `${editForm.purpose ? editForm.purpose + " — " : ""}${editForm.contactMobile ? `Contact mobile: ${editForm.contactMobile}` : ""}`.trim() || null
           )
         : (editForm.purpose || null);
 
-      const updates = {
-        customer_name: isDepartment ? (editForm.contactName || null) : editingSale.customer_name,
-        notes: combinedNotes,
-        subtotal: newTotal,
-        total_amount: newTotal,
-        ...(isDepartment
-          ? { department_id: departmentId, carrier_id: carrierId }
-          : {
-              account_holder_id: accountHolderId,
-              reference_type: editForm.referenceType || null,
-              reference_name: editForm.referenceName || null,
-            }),
-      };
+      const items = validItems.map((it) => ({ sweet_id: nameToSweetId[it.sweet], quantity: Number(it.quantity) }));
 
-      const { error: updateErr } = await sb.from("sales").update(updates, "id", editingSale.id);
-      if (updateErr) throw updateErr;
-
-      const { error: delItemsErr } = await sb.from("sale_items").delete("sale_id", editingSale.id);
-      if (delItemsErr) throw delItemsErr;
-
-      const newItemRows = validItems.map((it) => ({
-        sale_id: editingSale.id,
-        sweet_id: nameToSweetId[it.sweet],
-        quantity: Number(it.quantity),
-        rate: prices[it.sweet] || 0,
-        total_amount: Number(it.quantity) * (prices[it.sweet] || 0),
-      }));
-      const { error: insItemsErr } = await sb.from("sale_items").insert(newItemRows);
-      if (insItemsErr) throw insItemsErr;
-
-      // Post the difference as its own ledger line rather than trying to locate
-      // and edit the original ledger row — dues are a running sum, so a signed
-      // "correction" entry keeps the balance right while leaving a clear audit
-      // trail of what changed and why.
-      const originalTotal = Number(editingSale.total_amount) || 0;
-      const delta = newTotal - originalTotal;
-      if (delta !== 0) {
-        const ledgerTable = isDepartment ? "department_ledger_entries" : "account_ledger_entries";
-        const ledgerPayload = isDepartment
-          ? { department_id: departmentId, entry_type: "correction", amount: delta, description: `Correction to entry #${editingSale.id}` }
-          : { account_holder_id: accountHolderId, entry_type: "correction", amount: delta, description: `Correction to entry #${editingSale.id}` };
-        const { error: ledgerErr } = await sb.from(ledgerTable).insert(ledgerPayload);
-        if (ledgerErr) throw ledgerErr;
+      const { error: rpcErr } = await sb.rpc("correct_credit_sale", {
+        p_sale_id: editingSale.id,
+        p_items: items,
+        p_department_id: isDepartment ? departmentId : null,
+        p_carrier_id: isDepartment ? carrierId : null,
+        p_account_holder_id: isDepartment ? null : accountHolderId,
+        p_reference_type: isDepartment ? null : (editForm.referenceType || null),
+        p_reference_name: isDepartment ? null : (editForm.referenceName || null),
+        p_customer_name: isDepartment ? (editForm.contactName || null) : null,
+        p_notes: combinedNotes,
+      });
+      if (rpcErr) {
+        if (/no longer exists/i.test(rpcErr.message || "")) {
+          setActionError("This entry no longer exists — it looks like it was already deleted (possibly on another device). Refreshing the list…");
+          setEditingSale(null);
+          setEditForm(null);
+          setExpandedGroupKey(null);
+          setReloadKey((k) => k + 1);
+          return;
+        }
+        throw rpcErr;
       }
 
       setActionMsg("✅ Entry corrected successfully.");
@@ -599,22 +546,8 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
     setActionMsg("");
 
     try {
-      const { error: delItemsErr } = await sb.from("sale_items").delete("sale_id", saleId);
-      if (delItemsErr) throw delItemsErr;
-
-      const { error: delSaleErr } = await sb.from("sales").delete("id", saleId);
-      if (delSaleErr) throw delSaleErr;
-
-      const isDepartment = creditType === "department";
-      const originalTotal = Number(sale.total_amount) || 0;
-      if (originalTotal !== 0) {
-        const ledgerTable = isDepartment ? "department_ledger_entries" : "account_ledger_entries";
-        const ledgerPayload = isDepartment
-          ? { department_id: sale.department_id, entry_type: "correction", amount: -originalTotal, description: `Reversal — deleted entry #${saleId}` }
-          : { account_holder_id: sale.account_holder_id, entry_type: "correction", amount: -originalTotal, description: `Reversal — deleted entry #${saleId}` };
-        const { error: ledgerErr } = await sb.from(ledgerTable).insert(ledgerPayload);
-        if (ledgerErr) throw ledgerErr;
-      }
+      const { error: rpcErr } = await sb.rpc("delete_sale_entry", { p_sale_id: saleId });
+      if (rpcErr) throw rpcErr;
 
       setActionMsg("🗑️ Entry deleted and dues adjusted.");
       if (editingSale && String(editingSale.id) === String(saleId)) {
@@ -657,8 +590,6 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
           <button
             className={period === "monthly" ? "active" : ""}
             onClick={() => setPeriod("monthly")}
-            disabled={dateLocked}
-            title={dateLocked ? "Your account can only view/edit today's data" : undefined}
           >
             🗓️ Monthly
           </button>
@@ -668,23 +599,11 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
           <div className="credit-report-dates">
             <label>
               From
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                disabled={dateLocked}
-                title={dateLocked ? "Your account can only view/edit today's data" : undefined}
-              />
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             </label>
             <label>
               To
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                disabled={dateLocked}
-                title={dateLocked ? "Your account can only view/edit today's data" : undefined}
-              />
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </label>
           </div>
         ) : (
@@ -876,11 +795,19 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
                         <td className="credit-report-actions">
                           {creditType === "department" ? (
                             <>
-                              <button type="button" onClick={() => openEditForSale(r.id)}>✏️ Edit</button>
+                              <button
+                                type="button"
+                                onClick={() => openEditForSale(r.id)}
+                                disabled={dateLocked && r.date !== todayISO()}
+                                title={dateLocked && r.date !== todayISO() ? "Your account can only edit today's entries — this date is view-only" : undefined}
+                              >
+                                ✏️ Edit
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => deleteSale(r.id)}
-                                disabled={deletingId === r.id}
+                                disabled={deletingId === r.id || (dateLocked && r.date !== todayISO())}
+                                title={dateLocked && r.date !== todayISO() ? "Your account can only edit today's entries — this date is view-only" : undefined}
                               >
                                 {deletingId === r.id ? "Deleting…" : "🗑️ Delete"}
                               </button>
@@ -910,11 +837,19 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
                                     .join(", ") || "—"}
                                 </span>
                                 <span>₹ {entry.amount}</span>
-                                <button type="button" onClick={() => openEditForSale(entry.id)}>✏️ Edit</button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditForSale(entry.id)}
+                                  disabled={dateLocked && entry.date !== todayISO()}
+                                  title={dateLocked && entry.date !== todayISO() ? "Your account can only edit today's entries — this date is view-only" : undefined}
+                                >
+                                  ✏️ Edit
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => deleteSale(entry.id)}
-                                  disabled={deletingId === entry.id}
+                                  disabled={deletingId === entry.id || (dateLocked && entry.date !== todayISO())}
+                                  title={dateLocked && entry.date !== todayISO() ? "Your account can only edit today's entries — this date is view-only" : undefined}
                                 >
                                   {deletingId === entry.id ? "Deleting…" : "🗑️ Delete"}
                                 </button>

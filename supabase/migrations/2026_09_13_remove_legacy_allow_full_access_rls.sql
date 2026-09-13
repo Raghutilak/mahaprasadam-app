@@ -1,0 +1,17 @@
+drop policy if exists "Allow full access" on public.account_holders;
+drop policy if exists "Allow full access" on public.account_ledger_entries;
+drop policy if exists "Allow full access" on public.bhoga_types;
+drop policy if exists "Allow full access" on public.carriers;
+drop policy if exists "Allow full access" on public.credit_payments;
+drop policy if exists "Allow full access" on public.daily_reports;
+drop policy if exists "Allow full access" on public.department_ledger_entries;
+drop policy if exists "Allow full access" on public.departments;
+drop policy if exists "Allow full access" on public.inventory_closings;
+drop policy if exists "Allow full access" on public.inventory_openings;
+drop policy if exists "Allow full access" on public.preachers;
+drop policy if exists "Allow full access" on public.sale_items;
+drop policy if exists "Allow full access" on public.sales;
+drop policy if exists "Allow full access" on public.stock_adjustments;
+drop policy if exists "Allow full access" on public.stock_receipt_items;
+drop policy if exists "Allow full access" on public.stock_receipts;
+drop policy if exists "Allow full access" on public.sweets;

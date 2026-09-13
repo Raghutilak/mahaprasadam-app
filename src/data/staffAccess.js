@@ -73,5 +73,5 @@ export const normalizeStaffRow = (row) => ({
   mobile: row.mobile || "",
   role: row.role === "admin" ? "admin" : "staff",
   allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : [],
-  restrictReportsToToday: !!row.restrict_reports_to_today,
+  restrictReportsToToday: !!row.restrict_reports_to_today, // VIEWING any date is always allowed; this only blocks editing/deleting entries on a date other than today (see SaleReport/CreditReport)
 });

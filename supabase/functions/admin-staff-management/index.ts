@@ -55,10 +55,17 @@ function getSecretKey() {
 
 const SECRET_KEY = getSecretKey();
 
+// Restrict CORS to your actual deployed frontend — set ALLOWED_ORIGIN as a
+// Supabase secret (e.g. https://your-app.vercel.app). Falls back to a
+// same-origin-only default (no wildcard) if unset, so an unconfigured
+// deployment fails closed rather than silently staying wide open.
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://sweet-accounts.vercel.app";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
 };
 
 function json(body: unknown, status = 200) {
@@ -507,179 +514,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// // ══════════════════════════════════════════════════════════════════
-// // admin-staff-management
-// //
-// // Runs on Supabase's infrastructure (NOT Vercel). Holds the service-role
-// // key as a Supabase secret (set via `supabase secrets set`), which is
-// // never exposed to the browser bundle. The frontend calls this function
-// // with the logged-in ADMIN's own access token; the function verifies
-// // that token belongs to an admin before doing anything privileged.
-// //
-// // Actions (POST body: { action, ...payload }):
-// //   • reset-password  { staffId, newPassword }
-// //       Resets another staff member's Supabase Auth password.
-// //   • add-staff       { name, email, mobile, password, allowedTabs, restrictReportsToToday }
-// //       Creates a new Supabase Auth user + staff_users profile row.
-// //   • update-role     { staffId, role }
-// //       Changes a staff member's admin/staff role (updates BOTH the
-// //       auth.users app_metadata used by RLS and the profile row).
-// //
-// // Deploy with:
-// //   supabase functions deploy admin-staff-management
-// // SUPABASE_URL and SUPABASE_SECRET_KEYS are auto-injected by the platform —
-// // nothing to set manually for a project that already has a secret key
-// // (Settings > API Keys). If yours only has the legacy service_role key
-// // still enabled, this function falls back to that automatically too.
-// // ══════════════════════════════════════════════════════════════════
-
-// import { createClient } from "https://esm.sh/@supabase/supabase-js@2.115.0";
-
-// const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-
-// // Supabase is retiring the JWT-based service_role key in favor of opaque
-// // secret keys (sb_secret_...). Edge Functions get the new one auto-injected
-// // as SUPABASE_SECRET_KEYS — a JSON object keyed by key name ("default"
-// // unless you've named others) — no manual `supabase secrets set` needed for
-// // this part. We still fall back to the legacy SUPABASE_SERVICE_ROLE_KEY in
-// // case this project hasn't created a secret key yet.
-// function getSecretKey() {
-//   const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
-//   if (secretKeysRaw) {
-//     try {
-//       const keys = JSON.parse(secretKeysRaw);
-//       const key = keys.default || Object.values(keys)[0];
-//       if (key) return key;
-//     } catch { /* fall through to legacy key below */ }
-//   }
-//   return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-// }
-
-// const SECRET_KEY = getSecretKey();
-
-// const corsHeaders = {
-//   "Access-Control-Allow-Origin": "*",
-//   "Access-Control-Allow-Headers": "authorization, content-type",
-//   "Access-Control-Allow-Methods": "POST, OPTIONS",
-// };
-
-// const json = (body, status = 200) =>
-//   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-// Deno.serve(async (req) => {
-//   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-//   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-
-//   const admin = createClient(SUPABASE_URL, SECRET_KEY, {
-//     auth: { autoRefreshToken: false, persistSession: false },
-//   });
-
-//   // ── Verify the caller is a logged-in admin ────────────────────────
-//   const authHeader = req.headers.get("Authorization") || "";
-//   const token = authHeader.replace(/^Bearer\s+/i, "");
-//   if (!token) return json({ error: "Missing Authorization header." }, 401);
-
-//   const { data: callerData, error: callerErr } = await admin.auth.getUser(token);
-//   if (callerErr || !callerData?.user) return json({ error: "Invalid or expired session." }, 401);
-
-//   const callerRole = callerData.user.app_metadata?.role;
-//   if (callerRole !== "admin") return json({ error: "Only an admin can do this." }, 403);
-
-//   // ── Handle the requested action ───────────────────────────────────
-//   let body;
-//   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body." }, 400); }
-//   const { action } = body;
-
-//   try {
-//     if (action === "reset-password") {
-//       const { staffId, newPassword } = body;
-//       if (!staffId || !newPassword) return json({ error: "staffId and newPassword are required." }, 400);
-//       const { error } = await admin.auth.admin.updateUserById(staffId, { password: newPassword });
-//       if (error) throw error;
-//       return json({ ok: true });
-//     }
-
-//     if (action === "add-staff") {
-//       const { name, email, mobile, password, allowedTabs, restrictReportsToToday } = body;
-//       if (!name || !email || !password) return json({ error: "name, email, and password are required." }, 400);
-
-//       const { data: created, error: createErr } = await admin.auth.admin.createUser({
-//         email, password, email_confirm: true, app_metadata: { role: "staff" },
-//       });
-//       if (createErr) throw createErr;
-
-//       const { data: profile, error: profileErr } = await admin.from("staff_users").insert({
-//         id: created.user.id,
-//         name,
-//         email,
-//         mobile: mobile || null,
-//         role: "staff",
-//         allowed_tabs: allowedTabs || [],
-//         restrict_reports_to_today: !!restrictReportsToToday,
-//       }).select().single();
-//       if (profileErr) throw profileErr;
-
-//       return json({ ok: true, staff: profile });
-//     }
-
-//     if (action === "update-role") {
-//       const { staffId, role } = body;
-//       if (!staffId || !["admin", "staff"].includes(role)) return json({ error: "staffId and a valid role are required." }, 400);
-
-//       const { error: metaErr } = await admin.auth.admin.updateUserById(staffId, { app_metadata: { role } });
-//       if (metaErr) throw metaErr;
-
-//       const { error: rowErr } = await admin.from("staff_users").update({ role }).eq("id", staffId);
-//       if (rowErr) throw rowErr;
-
-//       return json({ ok: true });
-//     }
-
-//     return json({ error: `Unknown action: ${action}` }, 400);
-//   } catch (err) {
-//     return json({ error: err.message || "Something went wrong." }, 500);
-//   }
-// });

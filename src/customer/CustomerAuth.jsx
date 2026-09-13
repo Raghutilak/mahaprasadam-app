@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabaseAuth } from "../supabaseAuthClient";
 import "./CustomerPortal.css";
 
-export default function CustomerAuth({ onExit, onStaffLoginClick, onGuestContinue }) {
+export default function CustomerAuth({ onExit, onStaffLoginClick }) {
   const [mode, setMode] = useState("login"); // "login" | "signup" | "forgot"
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
@@ -80,7 +80,7 @@ export default function CustomerAuth({ onExit, onStaffLoginClick, onGuestContinu
           {mode !== "forgot" && (
             <label>
               Password
-              <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
             </label>
           )}
 
@@ -105,12 +105,6 @@ export default function CustomerAuth({ onExit, onStaffLoginClick, onGuestContinu
         {mode === "forgot" && (
           <button type="button" className="adjust-btn-ghost" onClick={() => switchMode("login")}>
             ← Back to Log In
-          </button>
-        )}
-
-        {onGuestContinue && (mode === "login" || mode === "signup") && (
-          <button type="button" className="save-sale-button" style={{ marginTop: 12, background: "transparent", border: "1px solid var(--gold)", color: "var(--gold-light)", boxShadow: "none" }} onClick={onGuestContinue}>
-            🎫 Continue as Guest (no account needed)
           </button>
         )}
 

@@ -3,20 +3,43 @@
 // Lightweight Supabase REST client (no SDK dependency).
 // Same Supabase project used by the Mahaprasadam app's Donation
 // module, so donation records stay in sync across both apps.
+//
+// SECURITY: every request now carries the logged-in STAFF member's own
+// Supabase Auth access token (from supabaseStaffAuthClient.js) as its
+// Bearer token, instead of just the shared publishable/anon key. This is
+// what lets Row Level Security policies on the business tables (sales,
+// donations, inventory, ...) actually tell WHO is asking — see
+// supabase/migrations/20260913000000_business_tables_rls.sql. Every
+// existing sb.from(...)/sb.rpc(...) call site in the app is unaffected —
+// this file is the ONLY thing that changed to make that true.
+//
+// Falls back to the publishable key when nobody's logged in as staff yet
+// (e.g. briefly on first load) — RLS still applies to that request as the
+// `anon` role, exactly as before, so there's no new exposure either way.
 // ══════════════════════════════════════════════════════════════════
+import { supabaseStaffAuth } from "./supabaseStaffAuthClient";
 
 const SUPABASE_URL = "https://mtenqjudpspxwntamgjv.supabase.co";
 const SUPABASE_KEY = "sb_publishable_BIsAjxfeXUa90vWHV2sRHA_zkwU4whJ";
 
-const headers = {
-  apikey: SUPABASE_KEY,
-  Authorization: `Bearer ${SUPABASE_KEY}`,
-};
+let currentAccessToken = null;
+supabaseStaffAuth.auth.getSession().then(({ data }) => {
+  currentAccessToken = data.session?.access_token || null;
+});
+supabaseStaffAuth.auth.onAuthStateChange((_event, session) => {
+  currentAccessToken = session?.access_token || null;
+});
 
-const jsonHeaders = {
-  ...headers,
-  "Content-Type": "application/json",
-};
+function buildHeaders() {
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${currentAccessToken || SUPABASE_KEY}`,
+  };
+}
+
+function buildJsonHeaders() {
+  return { ...buildHeaders(), "Content-Type": "application/json" };
+}
 
 // Every method funnels through here so error shape is always consistent —
 // callers can always trust { data, error } and must check `error` explicitly
@@ -35,14 +58,14 @@ async function toResult(r) {
 const sb = {
   from: (table) => ({
     select: async (cols = "*") => {
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}`, { headers });
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}`, { headers: buildHeaders() });
       return toResult(r);
     },
 
     selectEq: async (cols = "*", col, val) => {
       const r = await fetch(
         `${SUPABASE_URL}/rest/v1/${table}?select=${cols}&${col}=eq.${encodeURIComponent(val)}`,
-        { headers }
+        { headers: buildHeaders() }
       );
       return toResult(r);
     },
@@ -55,7 +78,7 @@ const sb = {
     // that need it.
     selectFilter: async (cols = "*", filterString = "") => {
       const query = filterString ? `&${filterString}` : "";
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}${query}`, { headers });
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}${query}`, { headers: buildHeaders() });
       return toResult(r);
     },
 
@@ -65,7 +88,7 @@ const sb = {
     selectIlike: async (cols = "*", col, val) => {
       const r = await fetch(
         `${SUPABASE_URL}/rest/v1/${table}?select=${cols}&${col}=ilike.${encodeURIComponent(val.trim())}`,
-        { headers }
+        { headers: buildHeaders() }
       );
       return toResult(r);
     },
@@ -73,7 +96,7 @@ const sb = {
     insert: async (rows) => {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
         method: "POST",
-        headers: { ...jsonHeaders, Prefer: "return=representation" },
+        headers: { ...buildJsonHeaders(), Prefer: "return=representation" },
         body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
       });
       return toResult(r);
@@ -83,7 +106,7 @@ const sb = {
       const query = onConflict ? `?on_conflict=${encodeURIComponent(onConflict)}` : "";
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
         method: "POST",
-        headers: { ...jsonHeaders, Prefer: "return=representation,resolution=merge-duplicates" },
+        headers: { ...buildJsonHeaders(), Prefer: "return=representation,resolution=merge-duplicates" },
         body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
       });
       return toResult(r);
@@ -94,7 +117,7 @@ const sb = {
         `${SUPABASE_URL}/rest/v1/${table}?${col}=eq.${encodeURIComponent(val)}`,
         {
           method: "PATCH",
-          headers: { ...jsonHeaders, Prefer: "return=representation" },
+          headers: { ...buildJsonHeaders(), Prefer: "return=representation" },
           body: JSON.stringify(updates),
         }
       );
@@ -104,7 +127,7 @@ const sb = {
     delete: async (col, val) => {
       const r = await fetch(
         `${SUPABASE_URL}/rest/v1/${table}?${col}=eq.${encodeURIComponent(val)}`,
-        { method: "DELETE", headers: { ...headers, Prefer: "return=representation" } }
+        { method: "DELETE", headers: { ...buildHeaders(), Prefer: "return=representation" } }
       );
       // A successful DELETE that matched zero rows still returns 200/204 —
       // an empty array in `data` means no row in the table had this id.
@@ -116,7 +139,7 @@ const sb = {
     deleteAll: async () => {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=not.is.null`, {
         method: "DELETE",
-        headers: { ...headers, Prefer: "return=minimal" },
+        headers: { ...buildHeaders(), Prefer: "return=minimal" },
       });
       return toResult(r);
     },
@@ -128,7 +151,7 @@ const sb = {
   rpc: async (fnName, params = {}) => {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
       method: "POST",
-      headers: jsonHeaders,
+      headers: buildJsonHeaders(),
       body: JSON.stringify(params),
     });
     return toResult(r);

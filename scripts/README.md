@@ -27,15 +27,15 @@ review CSVs into `import_output/`. Nothing is sent to Supabase.
 From a live Google Sheet:
 
 ```
-python import_legacy_sheet.py --sheet-url "https://docs.google.com/spreadsheets/d/XXXX/edit"
-```
 
 python import_legacy_sheet.py --sheet-url "https://docs.google.com/spreadsheets/d/1Mde8qQCpUCXBJWLIHxDaXt0j4kOmSKzZd5P9lhE4wHU/edit" --credentials "..\credentials.json"
 
 From a downloaded CSV/TSV export instead:
 
 ```
+
 python import_legacy_sheet.py --file daily_log_export.csv
+
 ```
 
 **2. Check `import_output/review_needed.csv`.** Every row there was
@@ -44,7 +44,9 @@ skipped — fix the source row (or note it as fine to skip) before moving on.
 **3. Push for real:**
 
 ```
+
 python import_legacy_sheet.py --file daily_log_export.csv --push
+
 ```
 
 python import_legacy_sheet.py --sheet-url "https://docs.google.com/spreadsheets/d/1Mde8qQCpUCXBJWLIHxDaXt0j4kOmSKzZd5P9lhE4wHU/edit" --credentials "..\credentials.json" --push
@@ -52,3 +54,4 @@ python import_legacy_sheet.py --sheet-url "https://docs.google.com/spreadsheets/
 See the big comment block at the top of `import_legacy_sheet.py` for the
 exact classification rules (Cash/Paytm totals, Department vs Individual
 Credit, Recovery payments, Stock received).
+```

@@ -2,7 +2,6 @@
 function DailyReport({
   selectedDate,
   setSelectedDate,
-  dateLocked = false,
   openingStockValue,
   receivedTotal,
   issuedValue,
@@ -47,8 +46,6 @@ function DailyReport({
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                disabled={dateLocked}
-                title={dateLocked ? "Your account can only view/edit today's report" : undefined}
             />
         </div>
 

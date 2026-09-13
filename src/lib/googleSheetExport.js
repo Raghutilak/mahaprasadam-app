@@ -1,50 +1,37 @@
-const GOOGLE_EXPORT_URL =
-  import.meta.env.VITE_GOOGLE_EXPORT_URL;
+import { supabaseStaffAuth } from "../supabaseStaffAuthClient";
 
+const SUPABASE_URL = "https://mtenqjudpspxwntamgjv.supabase.co";
+
+// The Google Apps Script URL used to be a VITE_ env var, which Vite bundles
+// straight into the shipped JS — meaning it was never actually secret, and
+// anyone could POST directly to it with no login at all. This now calls a
+// Supabase Edge Function instead, which holds the real URL as a
+// server-side secret and checks the caller is staff with export access
+// before forwarding anything. See supabase/functions/export-google-sheet.
 export async function exportToGoogleSheet(fromDate, toDate) {
-  if (!GOOGLE_EXPORT_URL) {
-    throw new Error(
-      "Google Sheet export URL is not configured."
-    );
+  const { data: { session } } = await supabaseStaffAuth.auth.getSession();
+  if (!session) {
+    throw new Error("You must be logged in as staff to export.");
   }
 
-  const response = await fetch(GOOGLE_EXPORT_URL, {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/export-google-sheet`, {
     method: "POST",
     headers: {
-      "Content-Type": "text/plain;charset=utf-8",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({
-      fromDate,
-      toDate,
-    }),
+    body: JSON.stringify({ fromDate, toDate }),
   });
 
-  const text = await response.text();
-
-  console.log("Google export HTTP status:", response.status);
-  console.log("Google export response:", text);
-
-  if (!response.ok) {
-    throw new Error(
-      `Google export HTTP ${response.status}: ${text.substring(0, 200)}`
-    );
-  }
-
   let data;
-
   try {
-    data = JSON.parse(text);
-  } catch (error) {
-    throw new Error(
-      "Google Sheet server returned HTML instead of JSON. " +
-      "Check the Apps Script Web App deployment."
-    );
+    data = await response.json();
+  } catch {
+    throw new Error("Export service returned an unexpected response.");
   }
 
-  if (!data.success) {
-    throw new Error(
-      data.error || "Google Sheet export failed."
-    );
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `Export failed (HTTP ${response.status}).`);
   }
 
   return data;

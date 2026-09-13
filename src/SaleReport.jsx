@@ -17,6 +17,12 @@ const prices = {
 // saleType: "cash" | "upi" — "upi" covers BOTH channels the Paytm Sale entry form can save under
 // (payment_method "paytm" or "upi"), so this report matches everything that section records —
 // same set of rows the Dashboard's own paytmTotal already sums.
+
+const todayISO = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
 function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, dateLocked = false }) {
   const [sales, setSales] = useState([]);
   const [itemsBySaleId, setItemsBySaleId] = useState({});
@@ -128,6 +134,11 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, date
     return acc;
   }, {});
 
+  // Viewing any date is always allowed — only EDITING/DELETING is restricted
+  // for accounts with dateLocked, and only when the report is showing a day
+  // other than today (every row here belongs to selectedDate).
+  const editingBlocked = dateLocked && selectedDate !== todayISO();
+
   // ── Correction helpers (quantities only — no name/date/delete changes) ──
   const openEdit = (saleId) => {
     setActionError("");
@@ -170,46 +181,21 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, date
     setActionMsg("");
 
     try {
-      // Guard against correcting an entry that's already been deleted elsewhere (another device/tab
-      // open on this same report) since this report's list was loaded. Without this check, the UPDATE
-      // and DELETE below would silently affect zero rows — Postgres doesn't error on a WHERE clause
-      // that matches nothing — and only the final INSERT into sale_items would fail, with a raw
-      // foreign-key-violation message that doesn't explain what actually happened.
-      const { data: stillExists, error: existsErr } = await sb
-        .from("sales")
-        .selectFilter("id", `id=eq.${editingSaleId}`);
-      if (existsErr) throw existsErr;
-      if (!Array.isArray(stillExists) || stillExists.length === 0) {
-        setActionError("This entry no longer exists — it looks like it was already deleted (possibly on another device). Refreshing the list…");
-        setEditingSaleId(null);
-        setEditQuantities(null);
-        setReloadKey((k) => k + 1);
-        return;
-      }
-
       const newTotal = validItems.reduce((t, sw) => t + (prices[sw] || 0) * editQuantities[sw], 0);
+      void newTotal; // computed for the UI's own display; the RPC recomputes it server-side and is authoritative
 
-      const { error: updateErr } = await sb.from("sales").update(
-        { subtotal: newTotal, total_amount: newTotal, amount_paid: newTotal, balance_amount: 0 },
-        "id",
-        editingSaleId
-      );
-      if (updateErr) throw updateErr;
-
-      // Same delete-then-reinsert approach as the Credit reports' correction flow —
-      // simplest way to land on exactly the corrected set of item rows.
-      const { error: delErr } = await sb.from("sale_items").delete("sale_id", editingSaleId);
-      if (delErr) throw delErr;
-
-      const newItemRows = validItems.map((sw) => ({
-        sale_id: editingSaleId,
-        sweet_id: nameToSweetId[sw],
-        quantity: editQuantities[sw],
-        rate: prices[sw] || 0,
-        total_amount: editQuantities[sw] * (prices[sw] || 0),
-      }));
-      const { error: insErr } = await sb.from("sale_items").insert(newItemRows);
-      if (insErr) throw insErr;
+      const items = validItems.map((sw) => ({ sweet_id: nameToSweetId[sw], quantity: editQuantities[sw] }));
+      const { error: rpcErr } = await sb.rpc("correct_cash_or_paytm_sale", { p_sale_id: editingSaleId, p_items: items });
+      if (rpcErr) {
+        if (/no longer exists/i.test(rpcErr.message || "")) {
+          setActionError("This entry no longer exists — it looks like it was already deleted (possibly on another device). Refreshing the list…");
+          setEditingSaleId(null);
+          setEditQuantities(null);
+          setReloadKey((k) => k + 1);
+          return;
+        }
+        throw rpcErr;
+      }
 
       setActionMsg("✅ Entry corrected successfully.");
       setEditingSaleId(null);
@@ -245,11 +231,8 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, date
     setActionMsg("");
 
     try {
-      const { error: delItemsErr } = await sb.from("sale_items").delete("sale_id", saleId);
-      if (delItemsErr) throw delItemsErr;
-
-      const { error: delSaleErr } = await sb.from("sales").delete("id", saleId);
-      if (delSaleErr) throw delSaleErr;
+      const { error: rpcErr } = await sb.rpc("delete_sale_entry", { p_sale_id: saleId });
+      if (rpcErr) throw rpcErr;
 
       setActionMsg("🗑️ Entry deleted.");
       if (editingSaleId === saleId) {
@@ -282,13 +265,7 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, date
         <div className="credit-report-dates">
           <label>
             Date
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              disabled={dateLocked}
-              title={dateLocked ? "Your account can only view/edit today's report" : undefined}
-            />
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
           </label>
         </div>
       </div>
@@ -358,11 +335,19 @@ function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, date
                   ))}
                   <td className="credit-report-amount">₹ {r.amount}</td>
                   <td className="credit-report-actions">
-                    <button type="button" onClick={() => openEdit(r.id)}>✏️ Edit</button>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(r.id)}
+                      disabled={editingBlocked}
+                      title={editingBlocked ? "Your account can only edit today's entries — this date is view-only" : undefined}
+                    >
+                      ✏️ Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => deleteSale(r.id)}
-                      disabled={deletingId === r.id}
+                      disabled={deletingId === r.id || editingBlocked}
+                      title={editingBlocked ? "Your account can only edit today's entries — this date is view-only" : undefined}
                     >
                       {deletingId === r.id ? "Deleting…" : "🗑️ Delete"}
                     </button>

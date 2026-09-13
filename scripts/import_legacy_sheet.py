@@ -93,6 +93,42 @@ PRICES = {"Peda": 15, "Sandesh": 15, "Rasagulla": 25, "Rasamalai": 25, "Sweet Sa
 
 PAYMENT_MARKERS = {"CASH": "cash", "PAYTM": "paytm", "TR": "tr", "T.R.": "tr", "T.R": "tr"}
 
+# ── Department short code → full name ────────────────────────────────
+# The old sheet's DEPT column uses short codes (TEMPLE, DEITY, LM, ...);
+# the app's departments table should hold the full name so it doesn't end
+# up with a second, duplicate department every time someone later types
+# the full name in through the app's own UI.
+#
+# These are the EXACT strings from the app's own canonical department list
+# (see `departments` in src/DepartmentCredit.jsx) — including the ALL CAPS
+# casing that list uses — so a department created by this import matches
+# one already used/selectable in the app, rather than creating a duplicate
+# under different casing.
+#
+# Any code NOT in this dict is intentionally left unmapped and flagged in
+# review_needed.csv rather than guessed at silently.
+DEPARTMENT_FULL_NAMES = {
+    "TEMPLE": "TEMPLE",
+    "DEITY": "DEITY",
+    "LM": "LIFE MEMBERSHIP",
+    "SANKIRTAN": "SANKIRTAN",
+    "MAINT": "MAINTENANCE",
+    "PURCHASE": "PURCHASE",
+    "COMMN": "COMMUNICATION",
+    "FFL": "FOOD FOR LIFE",
+    "IYF": "ISKCON YOUTH FORUM",
+    "BHISMA": "BHISMA",                    # kept as-is, per confirmation
+    "BKK": "BHAKTI KALA KSHETRA",
+}
+
+
+def full_department_name(short_code):
+    """Returns the mapped full name, or None if this code isn't in
+    DEPARTMENT_FULL_NAMES yet — callers should route None to review_needed
+    rather than importing under the raw short code."""
+    return DEPARTMENT_FULL_NAMES.get((short_code or "").strip().upper())
+
+
 OUTPUT_DIR = "import_output"
 
 # credentials/google-sheets-service-account.json, as a sibling of scripts/
@@ -278,11 +314,19 @@ def classify_rows(rows):
                     "amount": amount,
                 })
             else:
+                dept_full = full_department_name(dept)
+                if dept_full is None:
+                    review_needed.append({
+                        "row": row_num,
+                        "reason": f"Department code '{dept}' has no full-name mapping in DEPARTMENT_FULL_NAMES yet — add it near the top of this script before importing.",
+                        "raw": "\t".join(row),
+                    })
+                    continue
                 records["recovery_payments"].append({
                     "date": date,
                     "time": time_raw,
                     "recovery_type": "Department",
-                    "target_name": dept,
+                    "target_name": dept_full,
                     "account_holder": name,
                     "payment_method": PAYMENT_MARKERS[carried_upper],
                     "amount": amount,
@@ -302,8 +346,16 @@ def classify_rows(rows):
 
         # 6. Department Credit sale — anything else is a real department code
         if any(combined.values()):
+            dept_full = full_department_name(dept)
+            if dept_full is None:
+                review_needed.append({
+                    "row": row_num,
+                    "reason": f"Department code '{dept}' has no full-name mapping in DEPARTMENT_FULL_NAMES yet — add it near the top of this script before importing.",
+                    "raw": "\t".join(row),
+                })
+                continue
             records["department_credit_sales"].append({
-                "date": date, "time": time_raw, "department": dept, "account_holder": name, "carrier": carried, **combined,
+                "date": date, "time": time_raw, "department": dept_full, "account_holder": name, "carrier": carried, **combined,
             })
         else:
             review_needed.append({"row": row_num, "reason": "Unrecognized row with no quantities in either column block", "raw": "\t".join(row)})
@@ -356,7 +408,9 @@ def rpc(fn_name, params):
     return r.json()
 
 
-def get_or_create_master_id(table, name, mobile=None, cache={}):
+def get_or_create_master_id(table, name, mobile=None, cache=None):
+    if cache is None:
+        cache = {}    
     if not name:
         return None
     key = (table, name.strip().lower())
