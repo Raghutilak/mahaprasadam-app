@@ -202,11 +202,12 @@ function App() {
       // Queried straight from the `sales` table (same approach the Department/Individual Credit pages already use for
       // their own totals) rather than assuming get_daily_sale_totals aggregates these sale_types too.
       try {
-        const { data: creditRows, error: creditError } = await sb.from("sales").selectFilter(
-          "sale_type,total_amount",
-          `sale_date=eq.${reportDate}&sale_type=in.(department_credit,individual_credit)`
-        );
-
+        // Uses get_daily_credit_totals (security definer, staff_has_tab('dashboard'))
+        // instead of querying `sales` directly — the direct query only returned rows
+        // for staff holding the 'credit' tab, so dashboard-only staff (e.g. Dayavan)  
+        // saw ₹0 here even though they're meant to see all dashboard summary data.
+        const { data: creditRows, error: creditError } = await sb.rpc("get_daily_credit_totals", { p_date: reportDate });
+        
         console.log("DAILY REPORT totalRows:", JSON.stringify(totalRows, null, 2));
         console.log("DAILY REPORT totalError:", totalError);
 

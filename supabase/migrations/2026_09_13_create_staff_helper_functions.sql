@@ -1,3 +1,4 @@
+
 create or replace function public.ist_today()
 returns date
 language sql

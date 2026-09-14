@@ -119,6 +119,7 @@ DEPARTMENT_FULL_NAMES = {
     "IYF": "ISKCON YOUTH FORUM",
     "BHISMA": "BHISMA",                    # kept as-is, per confirmation
     "BKK": "BHAKTI KALA KSHETRA",
+    "NVV": "NILACHAL VEDIC VILLAGE",
 }
 
 
