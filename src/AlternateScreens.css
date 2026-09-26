@@ -1,0 +1,207 @@
+.alt-setup {
+  max-width: 640px;
+  margin: 40px auto;
+  text-align: center;
+}
+.alt-setup p { color: var(--muted); }
+.alt-setup-interval {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 24px 0;
+  font-size: 16px;
+}
+.alt-setup-interval button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--gold-light);
+  font-size: 20px;
+  cursor: pointer;
+}
+.alt-setup-start {
+  font-size: 20px;
+  padding: 14px 32px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, var(--saffron), var(--gold));
+  color: #1a0a00;
+  font-weight: 700;
+  cursor: pointer;
+}
+.alt-setup-hint { font-size: 13px; margin-top: 20px; }
+
+.alt-fullscreen-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  cursor: none;
+}
+.alt-fullscreen-root:hover { cursor: default; }
+
+
+.alt-autoscroll {
+  flex: 1;
+  width: 100%;
+  overflow-y: hidden; /* scrolling is driven by JS below, not manual dragging */
+}
+.alt-screen {
+  min-height: 100%; /* was: flex: 1 — lets tall content grow past one viewport */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  text-align: center;
+  overflow: visible; /* was: hidden — this was silently clipping tall screens */
+}
+
+
+.alt-screen-title {
+  font-size: clamp(32px, 5vw, 64px);
+  color: var(--gold-light);
+  margin-bottom: 36px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+.alt-screen-loading { font-size: 24px; color: var(--muted); }
+
+/* ── Screen 1: Available Sweets ── */
+.alt-screen-sweets { background: radial-gradient(circle at top, #3d1a00, var(--bg)); }
+.alt-sweets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 32px;
+  width: 100%;
+  max-width: 1400px;
+}
+.alt-sweet-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.alt-sweet-photo {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.alt-sweet-photo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72px;
+}
+.alt-sweet-name { font-size: 28px; font-weight: 700; color: var(--ivory); }
+.alt-sweet-price { font-size: 24px; color: var(--gold); font-weight: 700; }
+
+/* ── Screen 2: Today's Bhoga Donors ── */
+.alt-screen-donors { background: radial-gradient(circle at top, #2d1200, var(--bg)); }
+.alt-donors-list {
+  width: 100%;
+  max-width: 1100px;
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.alt-donor-row {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+  gap: 20px;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 24px;
+  font-size: 22px;
+}
+.alt-donor-name { color: var(--ivory); font-weight: 700; text-align: left; }
+.alt-donor-trno { color: var(--muted); font-weight: 400; font-size: 16px; }
+.alt-donor-purpose { color: var(--gold-light); text-align: left; }
+.alt-donor-amount { color: var(--green); font-weight: 700; text-align: right; }
+.alt-donors-total {
+  margin-top: 24px;
+  font-size: 28px;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+/* ── Screen 3: Festival ── */
+.alt-screen-festival { background: radial-gradient(circle at top, #4a1400, var(--bg)); }
+.alt-festival-date { font-size: clamp(20px, 2.5vw, 30px); color: var(--muted); margin-bottom: 30px; }
+.alt-festival-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1000px;
+}
+.alt-festival-item {
+  font-size: clamp(22px, 3vw, 40px);
+  color: var(--ivory);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 32px;
+}
+
+/* ── Screen 4: Deities (altar-closed darshan) ── */
+.alt-screen-deities { background: radial-gradient(circle at top, #241046, var(--bg)); }
+.alt-deity-photo-single {
+  max-width: min(90vw, 900px);
+  max-height: 78vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ── Hidden admin controls ── */
+.alt-controls {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translate(-50%, 20px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  cursor: default;
+}
+.alt-controls.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+.alt-controls button {
+  background: var(--surface);
+  color: var(--ivory);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.alt-controls-interval { color: var(--gold-light); font-weight: 700; min-width: 48px; text-align: center; }
+.alt-controls-exit { background: var(--red) !important; border-color: var(--red) !important; color: #fff !important; }

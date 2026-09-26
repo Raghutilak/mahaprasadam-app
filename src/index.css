@@ -1056,3 +1056,39 @@ select {
 .bhoga-proof-btn:active {
   transform: scale(0.97);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Department restriction — a visual marker shared across every place
+   a department-restricted staff member's locked department shows up:
+   the "🔒 Department" badge in Manage Passwords, and the disabled
+   "locked" input that replaces the normal department dropdown in
+   CreditReport.jsx and StaffBookOrder.jsx. Same treatment everywhere
+   so a restricted account is unmistakable at a glance, whoever's
+   looking at it. ══════════════════════════════════════════════════ */
+
+.dept-restricted-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid var(--gold);
+  color: var(--gold-light);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dept-restricted-row {
+  background: rgba(245, 166, 35, 0.06);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.dept-restricted-input {
+  border: 1px solid var(--gold) !important;
+  background: rgba(245, 166, 35, 0.1) !important;
+  color: var(--gold-light) !important;
+  font-weight: 700;
+}
+

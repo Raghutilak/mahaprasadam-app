@@ -36,22 +36,31 @@ From a downloaded CSV/TSV export instead:
 
 python import_legacy_sheet.py --file daily_log_export.csv
 
-```
-
 **2. Check `import_output/review_needed.csv`.** Every row there was
 skipped — fix the source row (or note it as fine to skip) before moving on.
 
-**3. Push for real:**
+**3. Push for real** — needs a **service-role key** first (the app's own
+public anon key can't call these RPCs at all anymore — see the big comment
+near the top of `import_legacy_sheet.py`). Treat this key like the Google
+service-account JSON above — never commit it, only ever an environment
+variable for the duration of the import:
 
 ```
+
+export SUPABASE_KEY="<service-role key, from Supabase dashboard → Settings → API>"
 
 python import_legacy_sheet.py --file daily_log_export.csv --push
 
-```
-
 python import_legacy_sheet.py --sheet-url "https://docs.google.com/spreadsheets/d/1Mde8qQCpUCXBJWLIHxDaXt0j4kOmSKzZd5P9lhE4wHU/edit" --credentials "..\credentials.json" --push
+
+```
 
 See the big comment block at the top of `import_legacy_sheet.py` for the
 exact classification rules (Cash/Paytm totals, Department vs Individual
 Credit, Recovery payments, Stock received).
+
+```
+npm install
+npm run dev -- --host 0.0.0.0
+
 ```

@@ -6,3 +6,5 @@ credentials.json
 .vercel/
 supabase/.temp/
 scripts/import_output/
+.vercel
+.env*

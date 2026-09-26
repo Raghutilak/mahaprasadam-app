@@ -1,0 +1,25 @@
+-- ══════════════════════════════════════════════════════════════════
+-- Fixes: "permission denied for table staff_users"
+--
+-- 20260910010000_staff_auth_security_upgrade.sql enabled RLS on
+-- staff_users and added the right policies — a staff member can read
+-- their own row, an admin can read/write every row — but never granted
+-- the underlying table-level privileges to `authenticated` at all.
+-- Postgres checks that base GRANT before it even evaluates RLS, so any
+-- direct table query (ManagePasswords.jsx's `supabaseStaffAuth
+-- .from("staff_users")` calls — loading the staff list, editing a row's
+-- tabs, etc.) fails outright with "permission denied", no matter what
+-- the RLS policies say.
+--
+-- This does NOT loosen who can see or change what — the RLS policies
+-- already in place are still the actual access control (own-row-only for
+-- a regular staff member, everything for an admin). It only lets
+-- Postgres get as far as checking those policies in the first place.
+--
+-- Note this is why the problem never showed up through is_staff(),
+-- staff_has_tab(), or staff_department_restriction_id() — all three are
+-- SECURITY DEFINER, so they read staff_users as their own owner, not as
+-- whichever role is actually logged in, and were unaffected by this gap.
+-- ══════════════════════════════════════════════════════════════════
+
+grant select, insert, update, delete on public.staff_users to authenticated;

@@ -47,7 +47,20 @@ function buildJsonHeaders() {
 async function toResult(r) {
   if (!r.ok) {
     let err;
-    try { err = await r.json(); } catch { err = { message: r.statusText }; }
+    // try { err = await r.json(); } catch { err = { message: r.statusText }; }
+    // catch { err = { message: r.statusText || `Request failed (HTTP ${r.status})` }; }
+
+
+    try {
+      err = await r.json();
+    } catch {
+      err = { message: r.statusText || `Request failed (HTTP ${r.status})` };
+    }
+
+
+
+
+
     return { data: null, error: { ...err, status: r.status } };
   }
   let data = null;

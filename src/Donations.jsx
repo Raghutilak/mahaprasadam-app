@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import sb from "./supabaseClient";
 import "./Donations.css";
 import DonationLabelPrint from "./DonationLabelPrint";
+import { getBusinessDate } from "./dateUtils";
 
 // Capitalizes just the first character of a name/text field as the person
 // types, leaving the rest of what they typed untouched (no full title-casing).
@@ -45,13 +46,7 @@ const getBhogaDay = (dateString) => {
 
 const PAYMENT_MODES = ["Cash", "UPI", "Online Transfer (NEFT/IMPS)", "Cheque", "DD"];
 
-const today = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
+const today = getBusinessDate;
 const fmt = (n) => (n ?? 0).toLocaleString("en-IN");
 const fmtDate = (dateStr) => {
   if (!dateStr) return "—";

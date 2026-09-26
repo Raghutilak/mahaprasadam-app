@@ -114,6 +114,11 @@ Pushing to the connected Git branch triggers a new deployment automatically.
 Edit → Test → Build → vercel --prod
 
 npm run build
+
+git add .
+git commit -m "Describe the change"
+git push origin main
+
 vercel --prod
 
 if error then

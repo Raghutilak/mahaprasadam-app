@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./DepartmentCredit.css";
 import { accountHolders, carriers } from "./data/people";
 import sb from "./supabaseClient";
+import { getBusinessDate } from "./dateUtils";
 
 export const departments = ["ACCOUNTS", "BHISMA","BHAKTI KALA KSHETRA","BHAKTIVEDANTA INSTITUTE","COMMUNICATION","DEITY","FOOD FOR LIFE","GOVINDAS","INTEGRATED PREACHING PROGRAM", "ISKCON YOUTH FORUM","LIFE MEMBERSHIP", "MAINTENANCE", "PURCHASE","NILACHAL VEDIC VILLAGE","SANKIRTAN","TEMPLE",
   ];
@@ -110,7 +111,11 @@ function DepartmentCredit({
   useEffect(() => {
     const loadTodaysTotal = async () => {
       const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // getBusinessDate now imported from ./dateUtils (was a local copy here)
+  
+      const localToday = getBusinessDate();
+  
       try {
         const { data, error } = await sb.from("sales").selectEq("*", "sale_date", localToday);
         if (error) { console.error("Department credit total load error:", error); return; }
@@ -816,8 +821,6 @@ function DepartmentCredit({
     </div>
   );
 }
-
-
 
 export default DepartmentCredit;
 

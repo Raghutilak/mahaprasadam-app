@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./CreditReport.css";
 import sb from "./supabaseClient";
+import { getBusinessDate } from "./dateUtils";
 
 const sweetOrder = ["Peda", "Sandesh", "Rasagulla", "Rasamalai", "Sweet Samosa", "Cake", "Ladoo"];
 
@@ -18,10 +19,7 @@ const prices = {
 // (payment_method "paytm" or "upi"), so this report matches everything that section records —
 // same set of rows the Dashboard's own paytmTotal already sums.
 
-const todayISO = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-};
+const todayISO = getBusinessDate;
 
 function SaleReport({ saleType, selectedDate, setSelectedDate, onCorrected, dateLocked = false }) {
   const [sales, setSales] = useState([]);

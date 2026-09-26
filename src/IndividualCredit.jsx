@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import "./DepartmentCredit.css";
 import sb from "./supabaseClient";
+import { getBusinessDate } from "./dateUtils";
 
 // Capitalizes just the first character of a name/text field as the person
 // types, leaving the rest of what they typed untouched (no full title-casing).
@@ -49,7 +50,11 @@ function IndividualCredit({
   useEffect(() => {
     const loadTodaysTotal = async () => {
       const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // getBusinessDate now imported from ./dateUtils (was a local copy here)
+  
+      // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const localToday = getBusinessDate();
+      
       try {
         const { data, error } = await sb.from("sales").selectEq("*", "sale_date", localToday);
         if (error) { console.error("Individual credit total load error:", error); return; }

@@ -16,7 +16,7 @@
 //       { staffId, newPassword }
 //
 //   • add-staff
-//       { name, email, mobile, password, allowedTabs, restrictReportsToToday }
+//       { name, email, mobile, password, allowedTabs, restrictReportsToToday, restrictToDepartment }
 //
 //   • update-role
 //       { staffId, role }
@@ -271,6 +271,11 @@ Deno.serve(async (req) => {
       const restrictReportsToToday =
         body.restrictReportsToToday === true;
 
+      const restrictToDepartment =
+        typeof body.restrictToDepartment === "string" && body.restrictToDepartment.trim()
+          ? body.restrictToDepartment.trim()
+          : null;
+
       if (!name) {
         return json({ error: "name is required." }, 400);
       }
@@ -335,6 +340,7 @@ Deno.serve(async (req) => {
           role: "staff",
           allowed_tabs: allowedTabs,
           restrict_reports_to_today: restrictReportsToToday,
+          restrict_to_department: restrictToDepartment,
         })
         .select()
         .single();

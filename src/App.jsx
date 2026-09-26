@@ -1,3 +1,4 @@
+import { getBusinessDate, getBusinessTime } from "./dateUtils";
 import { supabaseAuth } from "./supabaseAuthClient";
 import CustomerPortal from "./customer/CustomerPortal";
 import { useEffect, useRef, useState } from "react";
@@ -7,9 +8,13 @@ import "./index.css";
 import DepartmentCredit from "./DepartmentCredit";
 import IndividualCredit from "./IndividualCredit";
 import CreditReport from "./CreditReport";
+import CreditRecoveryReport from "./CreditRecoveryReport";
 import SaleReport from "./SaleReport";
 import Donations from "./Donations";
 import Orders from "./Orders";
+import StaffBookOrder from "./StaffBookOrder";
+import StaffMyOrders from "./StaffMyOrders";
+import AlternateScreens from "./AlternateScreens";
 import AdminLogin from "./AdminLogin";
 import ManagePasswords from "./ManagePasswords";
 import sb from "./supabaseClient";
@@ -78,7 +83,7 @@ function App() {
     async () => {
       try {
         setExporting(true);
-        const today = new Date() .toISOString() .split('T')[0];
+        const today = getBusinessDate();
         const result = await exportToGoogleSheet( today, today );
         console.log("Google Sheet export result:", result);
         alert(
@@ -160,10 +165,15 @@ function App() {
   // Stock/totals/dues used to be purely local, additive numbers — a sale made on one device was invisible to another until that other device
   // happened to reset. These refresh functions pull the REAL numbers from Supabase (via aggregation RPCs) and overwrite local state, so
   // every device converges to the same figures whenever a page loads or right after a save completes.
-
+  
+  // getBusinessDate now imported from ./dateUtils (was a local copy here)
+  
   const refreshDailyStockAndTotals = async () => {
-    // const now = new Date();
+    const now = new Date();
     // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    
+    const localToday = getBusinessDate();
+
     console.log("DAILY REPORT selectedDate:", selectedDate);
 
     const reportDate = selectedDate;
@@ -202,11 +212,12 @@ function App() {
       // Queried straight from the `sales` table (same approach the Department/Individual Credit pages already use for
       // their own totals) rather than assuming get_daily_sale_totals aggregates these sale_types too.
       try {
-        const { data: creditRows, error: creditError } = await sb.from("sales").selectFilter(
-          "sale_type,total_amount",
-          `sale_date=eq.${reportDate}&sale_type=in.(department_credit,individual_credit)`
-        );
-
+        // Uses get_daily_credit_totals (security definer, staff_has_tab('dashboard'))
+        // instead of querying `sales` directly — the direct query only returned rows
+        // for staff holding the 'credit' tab, so dashboard-only staff (e.g. Dayavan)  
+        // saw ₹0 here even though they're meant to see all dashboard summary data.
+        const { data: creditRows, error: creditError } = await sb.rpc("get_daily_credit_totals", { p_date: reportDate });
+        
         console.log("DAILY REPORT totalRows:", JSON.stringify(totalRows, null, 2));
         console.log("DAILY REPORT totalError:", totalError);
 
@@ -405,9 +416,9 @@ function App() {
   // Insert one `sales` header row + its `sale_items` rows into Supabase,
   // atomically via RPC — never a header with no items.
   const saveSaleToSupabase = async (saleType, paymentMethod, itemsObj, total) => {
-    const now = new Date();
-    const saleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
+    // const now = new Date();
+    // const saleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const saleDate = getBusinessDate();
     try {
       assertAllSweetIdsResolved(itemsObj);
 
@@ -437,7 +448,9 @@ function App() {
 
     const loadRecentTransactions = async () => {
       const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const localToday = getBusinessDate();
+
       const formatted = [];
 
       try {
@@ -492,7 +505,8 @@ function App() {
 
     const loadTodaysRecoveries = async () => {
       const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const localToday = getBusinessDate();
 
       try {
         const { data: rows, error } = await sb.from("credit_payments").selectFilter(
@@ -535,7 +549,9 @@ function App() {
 
       // Local calendar date (not UTC), matching how the Donations tab stores bhoge_date, so "today" lines up correctly in every timezone.
       const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const localToday = getBusinessDate();
+
       let primarySucceeded = false;
 
       try {
@@ -644,16 +660,41 @@ function App() {
   };
 
   const [schedule, setSchedule] = usePersistentState("sweet-schedule", initialSchedule);
+  // Which business date (IST) the `schedule` state above currently represents. `schedule` is
+  // stored in this browser's localStorage and, by design, is never cleared when the day closes
+  // (see the closeDay handler below — "Do NOT reset schedule here"). refreshScheduleReceivedStatus
+  // re-syncs each batch from Supabase, but only ever *sets* received:true when it finds a matching
+  // row; when it finds no match it now deliberately leaves the batch untouched (to avoid flashing
+  // back to "not received" during a transient query hiccup). That's correct within one day, but
+  // across a day boundary it meant a batch that was received:true with yesterday's items just
+  // stayed that way — showing yesterday's numbers on the Dashboard — until a receipt happened to
+  // be logged again in that exact same time-slot today. This tracks the day explicitly so we can
+  // tell "no match yet today" apart from "no match because this is stale data from yesterday".
+  const [scheduleDate, setScheduleDate] = usePersistentState("sweet-schedule-date", "");
 
   // The "received" flag per batch used to be a pure local boolean with no connection back to Supabase — so if a stock_receipts row was deleted
   // directly (e.g. via a SQL reset script) or created on another device, this device's checkboxes would silently disagree with reality. This
   // re-derives "received" from whatever stock_receipts rows actually exist in Supabase for today, so the flag can never drift out of sync.
   const refreshScheduleReceivedStatus = async () => {
-    const now = new Date();
-    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const localToday = getBusinessDate();
+
+    // Day has actually changed since this device last touched `schedule` — clear yesterday's
+    // received/items back to the blank initialSchedule *before* syncing, so a time-slot that
+    // hasn't been received yet today shows as not-received instead of showing yesterday's
+    // leftover numbers. Do this first so the merge below is working from a clean slate.
+    if (scheduleDate !== localToday) {
+      setSchedule(initialSchedule);
+      setScheduleDate(localToday);
+    }
 
     try {
       const { data: receipts, error } = await sb.from("stock_receipts").selectEq("id,notes", "receipt_date", localToday);
+
+      console.log("Today's date:", localToday);
+      console.log("Today's scheduled receipts:", receipts);
+      console.log("Receipt query error:", error);
+
+
       if (error) {
         console.error("Schedule received-status load error:", error);
         return;
@@ -684,14 +725,50 @@ function App() {
         }
       }
 
+      // setSchedule((currentSchedule) =>
+      //   currentSchedule.map((b) => {
+      //     const note = `Scheduled batch — ${b.time}`; const match = receiptByNote.get(note);
+      //     if (!match) return { ...b, received: false, receiptId: null };
+      //     const syncedItems = itemsByReceiptId.get(match);
+      //     return { ...b, received: true, receiptId: match, items: syncedItems || b.items };
+      //   })
+      // );
+
+
+
+
+
+
       setSchedule((currentSchedule) =>
         currentSchedule.map((b) => {
-          const note = `Scheduled batch — ${b.time}`; const match = receiptByNote.get(note);
-          if (!match) return { ...b, received: false, receiptId: null };
+          const note = `Scheduled batch — ${b.time}`;
+          const match = receiptByNote.get(note);
+
+          // If the database query temporarily doesn't return this receipt,
+          // preserve the existing received/receiptId state.
+          
+          if (!match) {
+            return b;
+          }
+
+
           const syncedItems = itemsByReceiptId.get(match);
-          return { ...b, received: true, receiptId: match, items: syncedItems || b.items };
+
+          return {
+            ...b,
+            received: true,
+            receiptId: match,
+            items: syncedItems || b.items,
+          };
         })
       );
+
+
+
+
+
+
+
     } catch (e) {
       console.error("Schedule received-status load error:", e);
     }
@@ -750,8 +827,9 @@ function App() {
       return;
     }
 
-    const now = new Date();
-    const adjustmentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // const now = new Date();
+    // const adjustmentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const adjustmentDate = getBusinessDate();
     const sign = row.adjustmentType === "addition" ? 1 : -1;
     const insertRows = nonZeroItems.map(([name, qty]) => ({
       adjustment_date: adjustmentDate, sweet_id: sweetIdByName[name], adjustment_type: row.adjustmentType,
@@ -807,6 +885,15 @@ function App() {
   const [paymentDepartment, setPaymentDepartment] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
+  // The date the money was actually received — used to matter only for Cash/
+  // Paytm (T.R./Other identify the payment by its receipt number instead),
+  // but it's shown for every mode since it's needed regardless and used to
+  // silently default to "today" with no way to correct a late-entered date.
+  const [paymentReceivedDate, setPaymentReceivedDate] = useState(todayISO);
+  // T.R. No. (for T.R. mode) / Reference No. (for Other mode) — this was
+  // captured nowhere before; credit_payments.reference_number existed in the
+  // schema but nothing ever wrote to it.
+  const [paymentReferenceNumber, setPaymentReferenceNumber] = useState("");
   const [payerType, setPayerType] = useState("Department");
   const [payerName, setPayerName] = useState("");
   const [payerMobile, setPayerMobile] = useState("");
@@ -1048,8 +1135,9 @@ function App() {
   // owes the money. It must never be sent as account_holder_id (that column means "the individual who owes this", enforced by the RPC's exactly-
   // one-debtor rule) — it's stored as free text instead (customer_name).
   const saveCreditSaleToSupabase = async ({ saleType, departmentName, contactName, contactMobile, carrierName, carrierMobile, debtorName, debtorMobile, referenceType, referenceName, items, totalAmount, notes }) => {
-    const now = new Date();
-    const saleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // const now = new Date();
+    // const saleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const saleDate = getBusinessDate();
 
     try {
       assertAllSweetIdsResolved(Object.fromEntries(items.map((it) => [it.sweet, it.quantity])));
@@ -1134,13 +1222,27 @@ function App() {
   // unaffected. performDepartmentCreditSave() below is kept — it's still used by the manual
   // Department Credit page.
 
-  const saveRecoveryToSupabase = async ({ recoveryType, targetName, amount, mode }) => {
+  const saveRecoveryToSupabase = async ({ recoveryType, targetName, amount, mode, paymentDate, referenceNumber, payerType, payerName, payerMobile }) => {
     const paymentMethod = mode === "Cash" ? "cash" : mode === "Paytm" ? "paytm" : mode === "T.R." ? "tr" : "other";
-    // Set the local calendar date explicitly (matching saveSaleToSupabase / markReceived) instead
-    // of relying on the RPC's own default — a client just past local midnight but before the
-    // server's UTC day rolls over (or vice versa) would otherwise get recorded against the wrong day.
-    const now = new Date();
-    const paymentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // The date the money was actually received — now a field on the form
+    // (paymentReceivedDate) instead of being silently forced to "today",
+    // since a recovery is sometimes logged a day or more after it came in.
+    // Falls back to today if somehow left blank.
+    // const now = new Date();
+    // const todayFallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const todayFallback = getBusinessDate();
+
+    const effectivePaymentDate = paymentDate || todayFallback;
+
+    // "Received From" (payerType/payerName/payerMobile) identifies who
+    // physically handed over the money — this used to be captured in the
+    // form and required, but was never actually sent to Supabase, so it
+    // silently vanished and Credit Reports could never show it. It's stored
+    // as free text in credit_payments.notes (there's no dedicated column),
+    // in a "Type: Name (mobile)" shape the Credit Reports can parse back out.
+    const notes = payerName?.trim()
+      ? `${payerType || "Payer"}: ${payerName.trim()}${payerMobile?.trim() ? ` (${payerMobile.trim()})` : ""}`
+      : null;
 
     try {
       let departmentId = null;
@@ -1160,7 +1262,9 @@ function App() {
           account_holder_id: accountHolderId,
           amount,
           payment_method: paymentMethod,
-          payment_date: paymentDate,
+          payment_date: effectivePaymentDate,
+          reference_number: referenceNumber?.trim() || null,
+          notes,
         },
         p_ledger_table: ledgerTable,
         p_ledger: ledgerPayload,
@@ -1180,12 +1284,9 @@ function App() {
   // included — only after every table that RESTRICTs deleting a sweet (sale_items, stock_receipt_items, inventory_*, stock_adjustments)
   // has already been cleared.
   // ⚠️ These both now go through admin-only RPCs (see migration
-  // 20260914000000) rather than raw per-table deleteAll() calls — a bulk
-  // wipe is exactly the kind of destructive operation that shouldn't be a
-  // standing grant, even to staff whose tab happens to show this page.
-  // NOTE: this also means Reset Donation Data is now admin-only in
-  // practice, even though the "reset_donation" tab can still be shown to
-  // a specific staff member (e.g. Dayavan Prabhu) — see the button's
+  // 20260914000000) rather than raw per-table deleteAll() calls — a bulk wipe is exactly the kind of destructive operation that shouldn't be a
+  // standing grant, even to staff whose tab happens to show this page. NOTE: this also means Reset Donation Data is now admin-only in
+  // practice, even though the "reset_donation" tab can still be shown to a specific staff member (e.g. Dayavan Prabhu) — see the button's
   // disabled state below.
   const handleResetAllData = async (includeMasterData) => {
     const confirmWord = includeMasterData ? "RESET EVERYTHING" : "RESET";
@@ -1198,6 +1299,7 @@ function App() {
     if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
 
     const { error } = await sb.rpc("admin_reset_other_data", { p_include_master: includeMasterData });
+    console.log("RESET RPC ERROR:", error);
 
     // Clear every sweet-* local cache key on this device too — EXCEPT the staff
     // Supabase Auth session key ("sweet-staff-auth"), which reset_other has no
@@ -1237,10 +1339,26 @@ function App() {
     const amount = Number(paymentAmount);
     const target = recoveryType === "Individual" ? paymentIndividual : paymentDepartment;
     const due = recoveryType === "Individual" ? (individualDues[target] || 0) : (departmentDues[target] || 0);
+    const needsReference = paymentMode === "T.R." || paymentMode === "Other";
     if (!target || !amount || amount <= 0 || !payerName.trim()) { alert("Select due account, enter payer name and a valid recovery amount."); return; }
+    if (!paymentReceivedDate) { alert("Enter the date this recovery was received."); return; }
+    if (needsReference && !paymentReferenceNumber.trim()) {
+      alert(`Enter the ${paymentMode === "T.R." ? "T.R. No." : "reference number"} for this recovery.`);
+      return;
+    }
     if (amount > due) { alert(`Recovery cannot exceed outstanding due of ₹ ${due}.`); return; }
 
-    const result = await saveRecoveryToSupabase({ recoveryType, targetName: target, amount, mode: paymentMode });
+    const result = await saveRecoveryToSupabase({
+      recoveryType,
+      targetName: target,
+      amount,
+      mode: paymentMode,
+      paymentDate: paymentReceivedDate,
+      referenceNumber: needsReference ? paymentReferenceNumber.trim() : "",
+      payerType,
+      payerName: payerName.trim(),
+      payerMobile,
+    });
 
     // Recovery is also money already physically/digitally received — flag
     // as unsynced rather than rolling back, same reasoning as Cash/Paytm.
@@ -1249,7 +1367,7 @@ function App() {
     if (recoveryType === "Individual") setIndividualLedger((ledger) => [...ledger, record]);
     else setDepartmentLedger((ledger) => [...ledger, record]);
 
-    setPaymentDepartment(""); setPaymentIndividual(""); setPaymentAmount(""); setPaymentMode("Cash"); setPayerType("Department"); setPayerName(""); setPayerMobile("");
+    setPaymentDepartment(""); setPaymentIndividual(""); setPaymentAmount(""); setPaymentMode("Cash"); setPaymentReceivedDate(todayISO); setPaymentReferenceNumber(""); setPayerType("Department"); setPayerName(""); setPayerMobile("");
     if (!result.ok) {
       alert(`${recoveryType} recovery saved locally as ${paymentMode}, but could NOT sync to Supabase (${result.error?.message || "unknown error"}). This entry is marked unsynced — please reconcile manually if needed.`);
     } else {
@@ -1275,76 +1393,56 @@ function App() {
   const closeDay = async () => {
     if (!closeAvailable) { alert("Close Day is available only at or after 8:40 PM."); return; }
 
-    // Block the entire close-day process if any sweet's Supabase id hasn't resolved yet — otherwise inventory_closings/inventory_openings would
-    // silently drop that sweet, corrupting today's closing AND tomorrow's opening stock with no visible error.
-    const missingSweets = Object.keys(prices).filter((name) => !sweetIdByName[name]);
-    if (missingSweets.length > 0) {
-      alert(`❌ Cannot close the day.\n\nThe following sweet names are missing from Supabase master data:\n\n- ${missingSweets.join("\n- ")}\n\nPlease wait for sync to finish (or check your connection), then try Close Day again.`);
-      return;
-    }
+    // IMPORTANT — read before touching this function again:
+    //
+    // The business day's *official* opening/closing stock and daily_reports
+    // row are no longer written from here at all. A Postgres migration
+    // (2026_09_13_mediated_writes_and_strict_rls.sql) locked down
+    // daily_reports / inventory_closings / inventory_openings to
+    // staff-view-only — the only thing allowed to write them is the
+    // close_business_day(date) function, which itself is revoked from
+    // `authenticated` (see 20260913000000_business_tables_rls.sql: "close_
+    // business_day is cron-only ... make sure it was never left callable
+    // over the API"). It now runs automatically every night at 11:55 PM
+    // IST via pg_cron (see migrations/close_business_day.sql), computing
+    // opening/received/sales/closing straight from the real sales/receipt/
+    // payment tables — not from whatever happens to be sitting in this
+    // browser tab's state.
+    //
+    // This function used to upsert those three tables directly, which
+    // silently started failing the moment that migration shipped: the
+    // writes were rejected by RLS, caught only by console.error, while
+    // "Day closed successfully" still fired unconditionally — so anyone
+    // clicking this button had no idea the actual company-wide numbers
+    // were never being saved. (If Opening Stock is showing ₹0 on the
+    // dashboard despite an obviously non-zero closing the day before,
+    // this is almost certainly why — see the note further down on how to
+    // check/recover from that.)
+    //
+    // So: this button now only resets *this device's* local daily
+    // counters (cash/paytm/credit trackers etc.) for convenience — it is
+    // NOT how the day actually gets closed company-wide anymore, and
+    // no longer pretends otherwise.
 
-    const report = { id: Date.now(), date: new Date().toISOString(), openingStock, openingStockValue, receivedTotal, issuedValue: outgoingValue, cashTotal, paytmTotal, creditRecords, individualCreditRecords, cashRecords, paytmRecords, departmentPayments, departmentCashReceivedToday, departmentPaytmReceivedToday, departmentTrReceivedToday, individualCashReceivedToday, individualPaytmReceivedToday, individualTrReceivedToday, cashToDeposit, totalPaytmCollection, totalTrCollection, closingStock: availableStock, closingStockValue };
-    if (!window.confirm(`Close this business day? Closing stock value: ₹ ${closingStockValue}`)) return;
+    if (!window.confirm(
+      "Reset this device's daily counters?\n\n" +
+      "The official opening/closing stock and daily report are generated automatically by the server every night at 11:55 PM IST — this button no longer saves anything to Supabase itself, it just clears cash/paytm/credit tracking on THIS device so tomorrow starts fresh here."
+    )) return;
 
-    // ── Save the same summary to Supabase's daily_reports table
-    //    (one row per calendar date, upserted by report_date) ──────────
-    const now = new Date();
-    const reportDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-    const departmentCreditTotalForReport = departmentCreditTotal;
-    const individualCreditTotalForReport = individualCreditTotal;
-    const creditPaymentsReceived =
-      departmentCashReceivedToday + departmentPaytmReceivedToday + departmentTrReceivedToday +
-      individualCashReceivedToday + individualPaytmReceivedToday + individualTrReceivedToday;
-
-    const reportPayload = {
-      opening_stock_value: openingStockValue, received_stock_value: receivedTotal, cash_sales: cashTotal, paytm_sales: paytmTotal,
-      upi_sales: 0, // reserved for a future dedicated UPI channel, distinct from Paytm
-      department_credit_sales: departmentCreditTotalForReport, individual_credit_sales: individualCreditTotalForReport,
-      credit_payments_received: creditPaymentsReceived, closing_stock_value: closingStockValue, total_sales: outgoingValue,
-    };
-
-    try {
-      const { error } = await sb.from("daily_reports").upsert({ report_date: reportDate, ...reportPayload }, "report_date");
-      if (error) throw error;
-    } catch (e) {
-      console.error("Daily report save error:", e);
-      alert("⚠️ Could not save today's report to Supabase (it's still saved locally in this app). Check your connection — you can retry by closing the day again if needed.");
-    }
-
-    // ── Per-sweet closing stock for today, and opening stock for the
-    //    next business day (tomorrow's opening == today's closing) ────
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
-
-    try {
-      const closingRows = Object.keys(prices)
-        .map((name) => ({ stock_date: reportDate, sweet_id: sweetIdByName[name] || null, quantity: availableStock[name] || 0 }))
-        .filter((r) => r.sweet_id);
-      const openingRows = Object.keys(prices)
-        .map((name) => ({ stock_date: tomorrowDate, sweet_id: sweetIdByName[name] || null, quantity: availableStock[name] || 0 }))
-        .filter((r) => r.sweet_id);
-
-      if (closingRows.length > 0) {
-        const { error } = await sb.from("inventory_closings").upsert(closingRows, "stock_date,sweet_id");
-        if (error) console.error("Inventory closing save error:", error);
-      }
-      if (openingRows.length > 0) {
-        const { error } = await sb.from("inventory_openings").upsert(openingRows, "stock_date,sweet_id");
-        if (error) console.error("Inventory opening save error:", error);
-      }
-    } catch (e) {
-      console.error("Inventory save error:", e);
-    }
-
-    setDailyReports((x)=>[...x, report]);
-    setOpeningStock(availableStock); setOpeningStockValue(closingStockValue);
-    setSchedule(initialSchedule.map(b=>({...b, received:false})));
+    setDailyReports((x) => [...x, { id: Date.now(), date: new Date().toISOString(), openingStock, openingStockValue, receivedTotal, issuedValue: outgoingValue, cashTotal, paytmTotal, creditRecords, individualCreditRecords, cashRecords, paytmRecords, departmentPayments, departmentCashReceivedToday, departmentPaytmReceivedToday, departmentTrReceivedToday, individualCashReceivedToday, individualPaytmReceivedToday, individualTrReceivedToday, cashToDeposit, totalPaytmCollection, totalTrCollection, closingStock: availableStock, closingStockValue }]);
+    // setSchedule(initialSchedule.map(b=>({...b, received:false})));
     setCashTotal(0); setCashRecords([]); setCashSoldStock(createEmptyItems()); setPaytmTotal(0); setPaytmRecords([]); setPaytmSoldStock(createEmptyItems()); setDepartmentCreditStock(createEmptyItems()); setIndividualCreditStock(createEmptyItems()); setCreditRecords([]); setIndividualCreditRecords([]); setDepartmentPayments([]); setDepartmentCreditTotal(0); setIndividualCreditTotal(0);
-    setAdjustmentEffects(createEmptyItems()); // today's adjustments are already baked into the new opening stock snapshot above
-    alert("Day closed successfully. Closing stock has been carried forward as the next opening stock."); navigateTo("dashboard");
+    setAdjustmentEffects(createEmptyItems()); // today's adjustments are already reflected in the server's automatic close
+    
+    // Do NOT reset schedule here.
+    // Scheduled receipts belong to Supabase and must survive the counter reset.
+    await refreshScheduleReceivedStatus();
+
+    alert("This device's counters have been reset for a new day. The official opening/closing stock and daily report will be generated automatically overnight."); 
+    navigateTo("dashboard");
   };
+
+
 
   const availableStock =
     Object.keys(prices).reduce(
@@ -1452,7 +1550,6 @@ function App() {
 
 
   const [customerSession, setCustomerSession] = useState(undefined); // undefined = still checking
-  const [showCustomerPortal, setShowCustomerPortal] = useState(false);
 
   // The logged-in staff member's profile (name/email/mobile/role/allowedTabs),
   // or null if this device isn't logged in as staff. Backed by a real
@@ -1505,6 +1602,15 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStaff, page, isStaff]);
 
+  // A department-restricted staff member only ever gets the Department
+  // Credit sub-view within Reports (see the hidden sub-nav buttons above)
+  // — bounce them there if they're somehow on any other reportsView.
+  useEffect(() => {
+    if (currentStaff?.restrictToDepartment && reportsView !== "department-credit") {
+      setReportsView("department-credit");
+    }
+  }, [currentStaff, reportsView]);
+
   useEffect(() => {
     supabaseAuth.auth.getSession().then(({ data }) => setCustomerSession(data.session));
     const { data: listener } = supabaseAuth.auth.onAuthStateChange((_event, session) => {
@@ -1517,23 +1623,23 @@ function App() {
   // time (or any customer's own device) lands here. Staff only see the admin dashboard
   // after logging in via the Staff Login link below, and that login is a real Supabase
   // Auth session, restored automatically on their own device (see `isStaff` above).
-  // Staff can also jump back into this view on purpose (to preview it, or book on
-  // behalf of a walk-in) via `showCustomerPortal`. While we're still checking for an
-  // existing staff session on first load, show nothing rather than flashing Book Order.
+  // Staff no longer jump into this customer-facing view to book on someone's behalf —
+  // "📦 Book an Order" in the sidebar (StaffBookOrder, below) does that directly, without
+  // needing a separate customer login at all. While we're still checking for an existing
+  // staff session on first load, show nothing rather than flashing Book Order.
   if (staffAuthLoading) return null;
 
-  if (!isStaff || showCustomerPortal) {
+  if (!isStaff) {
     return (
       <>
         <CustomerPortal
           session={customerSession}
-          onExit={isStaff && !customerSession ? () => setShowCustomerPortal(false) : undefined}
           onStaffLoginClick={() => setShowAdminLogin(true)}
         />
         {showAdminLogin && (
           <AdminLogin
             onCancel={() => setShowAdminLogin(false)}
-            onSuccess={(staffRecord) => { setCurrentStaff(staffRecord); setShowCustomerPortal(false); setShowAdminLogin(false); setPage("dashboard"); }}
+            onSuccess={(staffRecord) => { setCurrentStaff(staffRecord); setShowAdminLogin(false); setPage("dashboard"); }}
           />
         )}
       </>
@@ -1606,11 +1712,16 @@ function App() {
           {canAccess(currentStaff, TABS.DONATIONS) && (
             <button className={page === "donations" ? "active" : ""} onClick={() => navigateTo("donations")}>🙏 Donations</button>
           )}
-          {/* Book Order is available to every staff member regardless of role — canAccess()
-              always returns true for TABS.ORDERS once logged in. */}
+          {/* All Orders — the cross-department manage/accept/cancel view. Individually
+              granted now (currently admin + Suraj Pal only) — see staffAccess.js. */}
           {canAccess(currentStaff, TABS.ORDERS) && (
-            <button className={page === "orders" ? "active" : ""} onClick={() => navigateTo("orders")}>📦 Book Orders</button>
+            <button className={page === "orders" ? "active" : ""} onClick={() => navigateTo("orders")}>📋 All Orders</button>
           )}
+          {/* Book an Order / My Orders — available to every staff member regardless of
+              role, including department-restricted account holders — canAccess()
+              always returns true for these two once logged in. */}
+          <button className={page === "place-order" ? "active" : ""} onClick={() => navigateTo("place-order")}>📦 Book an Order</button>
+          <button className={page === "my-orders" ? "active" : ""} onClick={() => navigateTo("my-orders")}>🧾 My Orders</button>
           {canAccess(currentStaff, TABS.REPORTS) && (
             <button className={page === "reports" ? "active" : ""} onClick={() => navigateTo("reports")}>📄 Reports</button>
           )}
@@ -1631,7 +1742,13 @@ function App() {
           {canAccess(currentStaff, TABS.EXPORT) && (
             <button className={page === "export" ? "active" : ""} onClick={handleGoogleSheetExport} disabled={exporting} > 📊 {exporting ? "Exporting..." : "Export to Google Sheet"} </button>
           )}
-          <button className="customer-portal-link" onClick={() => setShowCustomerPortal(true)}>🛒 Preview Customer Book Order</button>
+          
+
+          {canAccess(currentStaff, TABS.ALTERNATE_SCREENS) && (
+            <button className={page === TABS.ALTERNATE_SCREENS ? "active" : ""} onClick={() => navigateTo(TABS.ALTERNATE_SCREENS)} > 🖥️ Alternate Screens </button>
+          )}
+
+
           <button className="customer-portal-link" onClick={handleStaffLogout}>🔒 Staff Logout</button>
 
         </nav>
@@ -1941,12 +2058,12 @@ function App() {
             <header className="page-header">
               <div>
                 <h1>🔒 Close Day</h1>
-                <p>Archive the complete business day and carry stock forward</p>
+                <p>Reset this device's counters for a new day — the official close happens automatically overnight</p>
               </div>
             </header>
 
             <section className="batch-card receive-correction-form">
-              <h2>Closing Summary</h2>
+              <h2>Closing Summary (this device)</h2>
 
               <div className="item-row">
                 <span>Opening + Received</span>
@@ -1970,11 +2087,11 @@ function App() {
               </div>
 
               <button className="save-sale-button" onClick={closeDay} >
-                🔒 Close Business Day
+                🔒 Reset This Device for Tomorrow
               </button>
 
               <p>
-                Review the figures before closing. Closing archives all current-day data.
+                This clears cash/paytm/credit tracking on this device only. The server computes and saves the actual company-wide opening/closing stock and daily report automatically every night at 11:55 PM IST — it doesn't depend on this button.
               </p>
             </section>
           </>
@@ -2397,7 +2514,25 @@ function App() {
 
         {page === "donations" && <Donations />}
 
+        {/* All Orders — cross-department manage/accept/cancel view. Only reached by
+            whoever holds the ORDERS tab (admin + Suraj Pal) — canAccess() plus the
+            page-bounce effect above already keep everyone else off this page, so
+            there's no per-department branching needed here anymore. */}
         {page === "orders" && <Orders />}
+
+        {/* Book an Order — every staff member's own booking form, including a
+            department-restricted account holder (whose department field is locked
+            inside StaffBookOrder itself). This is also what the sidebar's old
+            "Preview Customer Book Order" link used to stand in for, now direct. */}
+        {page === "place-order" && <StaffBookOrder currentStaff={currentStaff} />}
+
+        {/* My Orders — every staff member's own order history, read-only. */}
+        {page === "my-orders" && <StaffMyOrders currentStaff={currentStaff} />}
+
+        {/* Alternate Screens — full-screen rotating kiosk display. Renders
+            without the usual page chrome around it once running (it takes
+            over the whole browser tab via the Fullscreen API itself). */}
+        {page === "alternate_screens" && <AlternateScreens />}
 
         {page === "payment" && (
           <>
@@ -2424,9 +2559,36 @@ function App() {
                   value={paymentMode}
                   onChange={(e) => setPaymentMode(e.target.value) }
                 >
-                  <option>Cash</option> <option>Paytm</option> <option>T.R.</option>
+                  <option>Cash</option> <option>Paytm</option> <option>T.R.</option> <option>Other</option>
                 </select>
               </div>
+              <div className="item-row">
+                <div className="item-name">
+                  <strong>Date Received</strong>
+                  <span>
+                    {paymentMode === "Cash" ? "Date the cash was received" : paymentMode === "Paytm" ? "Date the amount was received via Paytm" : "Date this recovery was received"}
+                  </span>
+                </div>
+                <input
+                  type="date"
+                  value={paymentReceivedDate}
+                  onChange={(e) => setPaymentReceivedDate(e.target.value)}
+                />
+              </div>
+              {(paymentMode === "T.R." || paymentMode === "Other") && (
+                <div className="item-row">
+                  <div className="item-name">
+                    <strong>{paymentMode === "T.R." ? "T.R. No." : "Reference No."}</strong>
+                    <span>{paymentMode === "T.R." ? "The actual Treasury Receipt number" : "Any reference number for this payment"}</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={paymentReferenceNumber}
+                    onChange={(e) => setPaymentReferenceNumber(e.target.value)}
+                    placeholder={paymentMode === "T.R." ? "T.R. No." : "Reference No."}
+                  />
+                </div>
+              )}
               <div className="item-row">
                 <div className="item-name">
                   <strong>Received From</strong>
@@ -2539,14 +2701,24 @@ function App() {
         {page === "reports" && (
           <>
             <div className="reports-subnav">
-              <button className={reportsView === "daily" ? "active" : ""} onClick={() => setReportsView("daily")}>🧾 Daily Report</button>
-              <button className={reportsView === "cash-sale" ? "active" : ""} onClick={() => setReportsView("cash-sale")}>💵 Cash Sale</button>
-              <button className={reportsView === "paytm-sale" ? "active" : ""} onClick={() => setReportsView("paytm-sale")}>📱 Paytm Sale</button>
+              {!currentStaff?.restrictToDepartment && (
+                <>
+                  <button className={reportsView === "daily" ? "active" : ""} onClick={() => setReportsView("daily")}>🧾 Daily Report</button>
+                  <button className={reportsView === "cash-sale" ? "active" : ""} onClick={() => setReportsView("cash-sale")}>💵 Cash Sale</button>
+                  <button className={reportsView === "paytm-sale" ? "active" : ""} onClick={() => setReportsView("paytm-sale")}>📱 Paytm Sale</button>
+                </>
+              )}
               <button className={reportsView === "department-credit" ? "active" : ""} onClick={() => setReportsView("department-credit")}>🏢 Department Credit</button>
-              <button className={reportsView === "individual-credit" ? "active" : ""} onClick={() => setReportsView("individual-credit")}>👤 Individual Credit</button>
+              {!currentStaff?.restrictToDepartment && (
+                <>
+                  <button className={reportsView === "individual-credit" ? "active" : ""} onClick={() => setReportsView("individual-credit")}>👤 Individual Credit</button>
+                  <button className={reportsView === "department-recovery" ? "active" : ""} onClick={() => setReportsView("department-recovery")}>🏢💰 Dept. Recovery</button>
+                  <button className={reportsView === "individual-recovery" ? "active" : ""} onClick={() => setReportsView("individual-recovery")}>👤💰 Individual Recovery</button>
+                </>
+              )}
             </div>
 
-            {reportsView === "daily" && (
+            {reportsView === "daily" && !currentStaff?.restrictToDepartment && (
               <DailyReport
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
@@ -2563,7 +2735,7 @@ function App() {
               />
             )}
 
-            {reportsView === "cash-sale" && (
+            {reportsView === "cash-sale" && !currentStaff?.restrictToDepartment && (
               <SaleReport
                 saleType="cash"
                 selectedDate={selectedDate}
@@ -2573,7 +2745,7 @@ function App() {
               />
             )}
 
-            {reportsView === "paytm-sale" && (
+            {reportsView === "paytm-sale" && !currentStaff?.restrictToDepartment && (
               <SaleReport
                 saleType="upi"
                 selectedDate={selectedDate}
@@ -2591,10 +2763,11 @@ function App() {
                 onBack={() => setReportsView("daily")}
                 onCorrected={() => { refreshDailyStockAndTotals(); refreshDues(); }}
                 dateLocked={!!currentStaff?.restrictReportsToToday}
+                lockedDepartment={currentStaff?.restrictToDepartment || ""}
               />
             )}
 
-            {reportsView === "individual-credit" && (
+            {reportsView === "individual-credit" && !currentStaff?.restrictToDepartment && (
               <CreditReport
                 creditType="individual"
                 initialPeriod={creditReportPeriod}
@@ -2604,13 +2777,29 @@ function App() {
                 dateLocked={!!currentStaff?.restrictReportsToToday}
               />
             )}
+
+            {reportsView === "department-recovery" && !currentStaff?.restrictToDepartment && (
+              <CreditRecoveryReport
+                creditType="department"
+                backLabel="← Back to Reports"
+                onBack={() => setReportsView("daily")}
+                isAdmin={currentStaff?.role === "admin"}
+              />
+            )}
+
+            {reportsView === "individual-recovery" && !currentStaff?.restrictToDepartment && (
+              <CreditRecoveryReport
+                creditType="individual"
+                backLabel="← Back to Reports"
+                onBack={() => setReportsView("daily")}
+                isAdmin={currentStaff?.role === "admin"}
+              />
+            )}
           </>
         )}
       </main>
     </div>
   );
-
-
 
 }
 

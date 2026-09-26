@@ -38,7 +38,7 @@ export default function Orders() {
     // If this list stays empty despite orders existing, that policy is what's missing.
     const { data, error: err } = await sb
       .from("orders")
-      .select("id,status,created_at,customer_email,customer_mobile,notes,order_items(quantity,sweets(name))");
+      .select("id,status,created_at,customer_email,customer_mobile,notes,department,requested_date,carriers(name,mobile),order_items(quantity,sweets(name))");
     if (err) {
       console.error("Orders load error:", err);
       setError(err.message || "Could not load orders.");
@@ -73,8 +73,8 @@ export default function Orders() {
         <div className="orders-header-title">
           <span className="icon">📦</span>
           <div>
-            <h2>Book Orders</h2>
-            <p>Orders placed by customers through the online Book Order portal</p>
+            <h2>All Orders</h2>
+            <p>Every order placed by a customer or by a staff member — accept, cancel, or mark it fulfilled here.</p>
           </div>
         </div>
         <button className="orders-refresh-btn" onClick={loadOrders} disabled={loading}>
@@ -103,12 +103,31 @@ export default function Orders() {
 
       {!loading && !error && visibleOrders.length > 0 && (
         <div className="orders-list">
-          {visibleOrders.map((o) => (
+          {visibleOrders.map((o) => {
+            const carrierMobile = (o.carriers?.mobile || "").replace(/\D/g, "");
+            const canShare = (o.status === "confirmed" || o.status === "fulfilled") && carrierMobile;
+            const shareText = [
+              `🍬 Order Confirmation — ${o.department || "Order"}`,
+              `Order ID: ${o.id.slice(0, 8)}`,
+              o.requested_date ? `For: ${o.requested_date}` : "",
+              "",
+              "Items:",
+              ...(o.order_items || []).map((it) => `  ${it.quantity} × ${it.sweets?.name || "Unknown"}`),
+              o.notes ? `\nNote: ${o.notes}` : "",
+              "\nPlease show this message at the counter.",
+            ].filter(Boolean).join("\n");
+            const whatsappHref = canShare
+              ? `https://wa.me/91${carrierMobile.slice(-10)}?text=${encodeURIComponent(shareText)}`
+              : null;
+
+            return (
             <div className={`order-card status-${o.status}`} key={o.id}>
               <div className="order-card-top">
                 <div className="order-card-customer">
-                  <strong>{o.customer_email}</strong>
+                  <strong>{o.customer_email || (o.department ? `🏢 ${o.department} (staff order)` : "—")}</strong>
                   {o.customer_mobile && <span className="order-mobile">📱 {o.customer_mobile}</span>}
+                  {o.requested_date && <span className="order-mobile">📅 For {o.requested_date}</span>}
+                  {o.carriers?.name && <span className="order-mobile">🚚 {o.carriers.name}{o.carriers.mobile ? ` (${o.carriers.mobile})` : ""}</span>}
                   <div className="order-card-when">Booked {fmtWhen(o.created_at)}</div>
                 </div>
                 <span className={`order-status-badge status-${o.status}`}>{STATUS_LABEL[o.status] || o.status}</span>
@@ -137,9 +156,18 @@ export default function Orders() {
                     {updatingId === o.id ? "..." : action.label}
                   </button>
                 ))}
+                {whatsappHref && (
+                  <a className="order-action-btn primary" href={whatsappHref} target="_blank" rel="noopener noreferrer">
+                    📤 Share with Carrier
+                  </a>
+                )}
+                {(o.status === "confirmed" || o.status === "fulfilled") && o.carriers?.name && !carrierMobile && (
+                  <span className="order-card-no-actions">No mobile number on file for {o.carriers.name} — can't share directly.</span>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

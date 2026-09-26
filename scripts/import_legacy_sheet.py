@@ -22,6 +22,11 @@ CLASSIFICATION RULES (confirmed with the temple's counter team)
   • Carried By ∈ {CASH, PAYTM, TR / T.R.}     → a Recovery/dues payment
         - if DEPT = "CREDIT"                 →   ...against an INDIVIDUAL's dues
         - otherwise (DEPT = a real dept code) →   ...against a DEPARTMENT's dues
+  • Carried By = "T.R.NO. <number>" (a number →   BOTH the Individual/Department
+    attached, unlike a bare TR/T.R. above)        Credit sale AND a matching same-
+                                                   amount recovery via T.R., tagged
+                                                   with that number as its reference
+                                                   (this sale was paid immediately)
   • DEPT = "CREDIT" (not a payment marker)    → Individual Credit sale
   • DEPT = anything else                     → Department Credit sale
         (Name of Devotee = account holder/contact, Carried By = carrier)
@@ -57,12 +62,22 @@ USAGE
 
        python import_legacy_sheet.py --file daily_log_export.csv --push
 
-     This app's public anon key is already baked into the app itself
-     (same one supabaseClient.js uses), so no extra secrets are needed
-     for a normal import. If you'd rather use your own service-role key
-     (bypasses row-level security, useful for very large backfills),
-     set SUPABASE_URL / SUPABASE_KEY environment variables first — the
-     script will use those instead.
+     REQUIRES a service-role key — set it as an environment variable
+     first (never hardcode it, never commit it — treat it like the
+     Google service-account JSON above):
+
+       export SUPABASE_KEY="<your service-role key, from Supabase
+                              dashboard → Settings → API>"       (macOS/Linux)
+       set SUPABASE_KEY=<...>                                     (Windows cmd)
+
+     The app's public anon key does NOT work here (and hasn't since
+     2026_09_13_fix_remaining_business_rls_and_rpc_grants.sql) — it can no
+     longer execute create_sale_with_items / create_credit_sale_with_ledger
+     / create_recovery_payment at all, by design (those are meant to be
+     called by a logged-in staff member's own session, not an anonymous
+     key). A service-role key bypasses that, and — since
+     2026_09_19_trust_service_role_as_admin.sql — is also trusted by the
+     is_admin()/staff_has_tab() checks inside those functions.
 
 Requires: gspread, oauth2client, requests
     pip install gspread oauth2client requests
@@ -72,26 +87,49 @@ Requires: gspread, oauth2client, requests
 import argparse
 import csv
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 
 import requests
 
 # ── Supabase connection ──────────────────────────────────────────────
-# Same project + same public anon key already shipped inside the app's
-# own supabaseClient.js (safe to reuse — it's the anon key, not a
-# secret). Override with env vars to use a service-role key instead.
+# --push needs a service-role key (see the module docstring above for
+# why the public anon key can't do this anymore). SUPABASE_KEY must be
+# set in the environment — there's deliberately no hardcoded fallback
+# here for the real push path, since that key must stay a secret.
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://mtenqjudpspxwntamgjv.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_BIsAjxfeXUa90vWHV2sRHA_zkwU4whJ")
 
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 JSON_HEADERS = {**HEADERS, "Content-Type": "application/json"}
 
+
+def _check_push_key():
+    """Called right before anything is actually pushed — fails fast with a
+    clear message instead of a confusing 401/403 partway through a run."""
+    if SUPABASE_KEY.startswith("sb_publishable_") or "anon" in SUPABASE_KEY:
+        print(
+            "\n❌ --push needs a service-role key, not the public anon key.\n"
+            "   Set it first: export SUPABASE_KEY=\"<service-role key>\"\n"
+            "   (Supabase dashboard → Settings → API → service_role secret)\n"
+        )
+        sys.exit(1)
+
 # ── Sweet list, in the exact order the app uses ──────────────────────
 SWEET_ORDER = ["Peda", "Sandesh", "Rasagulla", "Rasamalai", "Sweet Samosa", "Cake", "Ladoo"]
 PRICES = {"Peda": 15, "Sandesh": 15, "Rasagulla": 25, "Rasamalai": 25, "Sweet Samosa": 150, "Cake": 60, "Ladoo": 60}
 
 PAYMENT_MARKERS = {"CASH": "cash", "PAYTM": "paytm", "TR": "tr", "T.R.": "tr", "T.R": "tr"}
+
+# A bare "TR"/"T.R." Carried By value (matched via PAYMENT_MARKERS above) means the
+# WHOLE row is a standalone recovery/dues payment. "T.R.NO. 108784" — a T.R. number
+# attached — means something different: this specific Individual/Department Credit
+# SALE was paid immediately via that receipt, so it should become BOTH the sale AND a
+# matching recovery record, tagged with that number as its reference (see rule 4b in
+# classify_rows). Matched against carried_upper, which has already had dots stripped
+# ("T.R.NO. 108784" -> "TRNO 108784"), hence no dots in this pattern either.
+TR_WITH_NUMBER_RE = re.compile(r"^TR\s*(?:NO)?\s*[:\-]?\s*(\d+)")
 
 # ── Department short code → full name ────────────────────────────────
 # The old sheet's DEPT column uses short codes (TEMPLE, DEITY, LM, ...);
@@ -119,6 +157,7 @@ DEPARTMENT_FULL_NAMES = {
     "IYF": "ISKCON YOUTH FORUM",
     "BHISMA": "BHISMA",                    # kept as-is, per confirmation
     "BKK": "BHAKTI KALA KSHETRA",
+    "NVV": "NILACHAL VEDIC VILLAGE",
 }
 
 
@@ -334,7 +373,52 @@ def classify_rows(rows):
             continue
 
 
-        # 5. Individual Credit sale
+        # 4b. "T.R.NO. <number>" on what's otherwise a normal Individual/Department
+        # Credit sale row — paid immediately via that receipt, so it's recorded as BOTH
+        # the sale AND a same-amount recovery against the same account holder, tagged
+        # with the T.R. number (unlike rule 4 above, which is a standalone recovery row
+        # with no sale of its own).
+        tr_with_number = TR_WITH_NUMBER_RE.match(carried_upper)
+        if tr_with_number and dept_upper not in ("RECEIVED", "CASH", "BANK"):
+            tr_number = tr_with_number.group(1)
+
+            if not any(combined.values()):
+                review_needed.append({"row": row_num, "reason": "T.R.-numbered row has no sweet quantities at all", "raw": "\t".join(row)})
+                continue
+
+            amount = sum(combined[k] * PRICES[k] for k in SWEET_ORDER)
+
+            if dept_upper == "CREDIT":
+                records["individual_credit_sales"].append({
+                    "date": date, "time": time_raw, "individual_name": name, "reference_name": "", **combined,
+                })
+                records["recovery_payments"].append({
+                    "date": date, "time": time_raw, "recovery_type": "Individual",
+                    "target_name": name, "account_holder": name,
+                    "payment_method": "tr", "amount": amount, "reference_number": tr_number,
+                })
+            else:
+                dept_full = full_department_name(dept)
+                if dept_full is None:
+                    review_needed.append({
+                        "row": row_num,
+                        "reason": f"Department code '{dept}' has no full-name mapping in DEPARTMENT_FULL_NAMES yet — add it near the top of this script before importing.",
+                        "raw": "\t".join(row),
+                    })
+                    continue
+                records["department_credit_sales"].append({
+                    # No real carrier here — "T.R.NO. 108784" is a receipt number, not a
+                    # person, so it goes to the sale as blank rather than a fake carrier name.
+                    "date": date, "time": time_raw, "department": dept_full, "account_holder": name, "carrier": "", **combined,
+                })
+                records["recovery_payments"].append({
+                    "date": date, "time": time_raw, "recovery_type": "Department",
+                    "target_name": dept_full, "account_holder": name,
+                    "payment_method": "tr", "amount": amount, "reference_number": tr_number,
+                })
+            continue
+
+
         if dept_upper == "CREDIT":
             if any(combined.values()):
                 records["individual_credit_sales"].append({
@@ -382,7 +466,7 @@ def write_all_csvs(records, review_needed, closing_stock_by_date):
     write_csv("paytm_sales.csv", records["paytm_sales"], ["date", "time", "note"] + SWEET_ORDER)
     write_csv("department_credit_sales.csv", records["department_credit_sales"], ["date", "time", "department", "account_holder", "carrier"] + SWEET_ORDER)
     write_csv("individual_credit_sales.csv", records["individual_credit_sales"], ["date", "time", "individual_name", "reference_name"] + SWEET_ORDER)
-    write_csv("recovery_payments.csv", records["recovery_payments"], ["date", "time", "recovery_type", "target_name","account_holder", "payment_method", "amount"])
+    write_csv("recovery_payments.csv", records["recovery_payments"], ["date", "time", "recovery_type", "target_name","account_holder", "payment_method", "amount", "reference_number"])
     write_csv("review_needed.csv", review_needed, ["row", "reason", "raw"])
     write_csv(
         "inventory_closing_stock.csv",
@@ -566,9 +650,29 @@ def push_all(records, sweet_ids):
                 # imported date showed as ₹0 in the Daily Report. If create_recovery_payment
                 # doesn't yet accept/honor payment_date, update that Postgres function first to
                 # do: coalesce(p_payment->>'payment_date', current_date)::date.
+                #
+                # NOTE: "notes"/"reference_number" carry who actually delivered the money — the
+                # CSV's "account_holder" column (from the sheet's "Name of Devotee" cell) — in the
+                # same "Type: Name" shape the app's own Credit Recovery form now writes. This used
+                # to be dropped entirely on import, which is why imported recoveries never showed
+                # an Account Holder/Carrier in the Credit Reports even though the sheet clearly
+                # recorded one.
+                #
+                # Two distinct T.R. cases:
+                #  - A bare "TR"/"T.R." Carried By value on its own row: the counter team used the
+                #    "Name of Devotee" cell to note the T.R. NUMBER instead of a person's name — so
+                #    IT belongs in reference_number, not notes (no separate reference_number key is
+                #    set on r for these; this is the fallback below).
+                #  - A "T.R.NO. <number>" Carried By value on what's otherwise a normal Individual/
+                #    Department Credit sale row (see classify_rows rule 4b): that sale was paid
+                #    immediately via that receipt, so r already carries an explicit reference_number
+                #    (the T.R. number) AND a genuine account_holder name — both get pushed through
+                #    as-is, no guessing needed.
                 "p_payment": {"department_id": department_id, "account_holder_id": account_holder_id,
                               "amount": r["amount"], "payment_method": r["payment_method"],
-                              "payment_date": r["date"]},
+                              "payment_date": r["date"],
+                              "reference_number": r.get("reference_number") or (r["account_holder"] if r["payment_method"] == "tr" and r.get("account_holder") else None),
+                              "notes": f"Account Holder: {r['account_holder']}" if r.get("account_holder") and (r.get("reference_number") or r["payment_method"] != "tr") else None},
                 "p_ledger_table": ledger_table,
                 "p_ledger": ledger_payload,
             })
@@ -729,6 +833,8 @@ def main():
     if not args.push:
         print("\nDry run only — nothing was sent to Supabase. Re-run with --push once the CSVs above look right.")
         return
+
+    _check_push_key()
 
     if review_needed:
         answer = input(f"\n{len(review_needed)} row(s) in review_needed.csv were skipped. Continue pushing the rest anyway? [y/N] ")

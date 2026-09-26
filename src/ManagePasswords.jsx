@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabaseStaffAuth, callAdminStaffFunction } from "./supabaseStaffAuthClient";
 import { ALL_TABS, DEFAULT_NEW_STAFF_TABS, normalizeStaffRow } from "./data/staffAccess";
+import { departments } from "./DepartmentCredit";
 import "./ManagePasswords.css";
 
 // ── "Reset Password Data" page ───────────────────────────────────────────
@@ -100,7 +101,7 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newStaff, setNewStaff] = useState({
-    name: "", email: "", mobile: "", password: "", allowedTabs: [...DEFAULT_NEW_STAFF_TABS],
+    name: "", email: "", mobile: "", password: "", allowedTabs: [...DEFAULT_NEW_STAFF_TABS], restrictToDepartment: "",
   });
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState("");
@@ -122,7 +123,7 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
 
   const startEdit = (row) => {
     setEditingId(row.id);
-    setDraft({ name: row.name, mobile: row.mobile, allowedTabs: [...row.allowedTabs] });
+    setDraft({ name: row.name, mobile: row.mobile, allowedTabs: [...row.allowedTabs], restrictToDepartment: row.restrictToDepartment || "" });
   };
   const cancelEdit = () => { setEditingId(null); setDraft(null); };
 
@@ -138,7 +139,12 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
     try {
       const { data, error } = await supabaseStaffAuth
         .from("staff_users")
-        .update({ name: draft.name.trim(), mobile: draft.mobile.trim() || null, allowed_tabs: draft.allowedTabs })
+        .update({
+          name: draft.name.trim(),
+          mobile: draft.mobile.trim() || null,
+          allowed_tabs: draft.allowedTabs,
+          restrict_to_department: draft.restrictToDepartment || null,
+        })
         .eq("id", id)
         .select()
         .single();
@@ -199,10 +205,11 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
         mobile: newStaff.mobile.trim() || null,
         password: newStaff.password,
         allowedTabs: newStaff.allowedTabs,
+        restrictToDepartment: newStaff.restrictToDepartment || null,
       });
       if (error) throw new Error(error.message);
       if (data?.staff) setStaff((prev) => [...prev, normalizeStaffRow(data.staff)].sort((a, b) => a.name.localeCompare(b.name)));
-      setNewStaff({ name: "", email: "", mobile: "", password: "", allowedTabs: [...DEFAULT_NEW_STAFF_TABS] });
+      setNewStaff({ name: "", email: "", mobile: "", password: "", allowedTabs: [...DEFAULT_NEW_STAFF_TABS], restrictToDepartment: "" });
       setShowAddForm(false);
     } catch (e2) {
       setAddError(e2.message || "Something went wrong.");
@@ -226,13 +233,13 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
           <div className="adjust-table-wrap">
             <table className="adjust-table manage-passwords-table">
               <thead>
-                <tr><th>Name</th><th>Email (login)</th><th>Mobile</th><th>Role</th><th>Tabs</th><th></th></tr>
+                <tr><th>Name</th><th>Email (login)</th><th>Mobile</th><th>Role</th><th>Department</th><th>Tabs</th><th></th></tr>
               </thead>
               <tbody>
                 {staff.map((row) => {
                   const editing = editingId === row.id;
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} className={row.restrictToDepartment ? "dept-restricted-row" : ""}>
                       <td>{editing ? <input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /> : row.name}</td>
                       <td>{row.email || "—"}</td>
                       <td>{editing ? <input value={draft.mobile || ""} onChange={(e) => setDraft((d) => ({ ...d, mobile: e.target.value }))} /> : (row.mobile || "—")}</td>
@@ -244,29 +251,47 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
                       </td>
                       <td>
                         {editing ? (
-                          <div className="tab-checkbox-grid">
-                            {ALL_TABS.map((t) => (
-                              <label key={t.key} className="tab-checkbox">
-                                <input type="checkbox" checked={draft.allowedTabs.includes(t.key)} onChange={() => toggleDraftTab(t.key)} />
-                                {t.label}
-                              </label>
+                          <select value={draft.restrictToDepartment} onChange={(e) => setDraft((d) => ({ ...d, restrictToDepartment: e.target.value }))}>
+                            <option value="">— No restriction —</option>
+                            {departments.map((d) => (
+                              <option key={d} value={d}>{d}</option>
                             ))}
-                          </div>
-                        ) : row.role === "admin" ? "All" : (row.allowedTabs.map((k) => ALL_TABS.find((t) => t.key === k)?.label || k).join(", ") || "—")}
+                          </select>
+                        ) : row.restrictToDepartment ? (
+                          <span className="dept-restricted-badge" title="Only sees/books this department, enforced server-side">🔒 {row.restrictToDepartment}</span>
+                        ) : "—"}
                       </td>
                       <td>
                         {editing ? (
                           <>
-                            <button className="adjust-btn-primary" disabled={saving} onClick={() => saveEdit(row.id)}>Save</button>
-                            <button className="adjust-btn-discard" disabled={saving} onClick={cancelEdit}>Cancel</button>
+                            <div className="tab-checkbox-grid">
+                              {ALL_TABS.map((t) => (
+                                <label key={t.key} className="tab-checkbox">
+                                  <input type="checkbox" checked={draft.allowedTabs.includes(t.key)} onChange={() => toggleDraftTab(t.key)} />
+                                  {t.label}
+                                </label>
+                              ))}
+                            </div>
+                            {/* Save/Cancel live here too (not just the actions column) — with the
+                                checkbox grid this wide, the table can scroll further right than a
+                                phone screen shows, and the actions column would otherwise be
+                                scrolled out of view right when it's needed most. */}
+                            <div className="tab-edit-actions">
+                              <button className="adjust-btn-primary" disabled={saving} onClick={() => saveEdit(row.id)}>💾 Save</button>
+                              <button className="adjust-btn-discard" disabled={saving} onClick={cancelEdit}>Cancel</button>
+                            </div>
+                            {rowMsg[row.id] && <p className="row-msg">{rowMsg[row.id]}</p>}
                           </>
-                        ) : (
+                        ) : row.role === "admin" ? "All" : (row.allowedTabs.map((k) => ALL_TABS.find((t) => t.key === k)?.label || k).join(", ") || "—")}
+                      </td>
+                      <td>
+                        {editing ? null : (
                           <>
                             <button className="adjust-btn-ghost" onClick={() => startEdit(row)}>Edit Tabs</button>{" "}
                             <button className="adjust-btn-ghost" onClick={() => resetPassword(row)}>Reset Password</button>
                           </>
                         )}
-                        {rowMsg[row.id] && <p className="row-msg">{rowMsg[row.id]}</p>}
+                        {!editing && rowMsg[row.id] && <p className="row-msg">{rowMsg[row.id]}</p>}
                       </td>
                     </tr>
                   );
@@ -287,6 +312,15 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
             <label>Email (used to log in)<input type="email" required value={newStaff.email} onChange={(e) => setNewStaff((s) => ({ ...s, email: e.target.value }))} /></label>
             <label>Mobile (optional, for display only)<input type="tel" value={newStaff.mobile} onChange={(e) => setNewStaff((s) => ({ ...s, mobile: e.target.value }))} /></label>
             <label>Temporary Password (they can change it later)<input required value={newStaff.password} onChange={(e) => setNewStaff((s) => ({ ...s, password: e.target.value }))} /></label>
+            <label>
+              Restrict to Department (optional)
+              <select value={newStaff.restrictToDepartment} onChange={(e) => setNewStaff((s) => ({ ...s, restrictToDepartment: e.target.value }))}>
+                <option value="">— No restriction (sees/books every department) —</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </label>
             <div className="tab-checkbox-grid">
               {ALL_TABS.map((t) => (
                 <label key={t.key} className="tab-checkbox">
@@ -296,6 +330,7 @@ function AdminPasswordPanel({ currentStaff, onSelfUpdated }) {
               ))}
             </div>
             <p style={{ fontSize: 12, opacity: 0.7 }}>📦 Book Order is always available to every staff member, in addition to whatever's checked above.</p>
+            <p style={{ fontSize: 12, opacity: 0.7 }}>🔒 A department restriction narrows both the Department Credit Report and Book Order to that one department only — enforced by Supabase itself, not just hidden in the screen.</p>
             {addError && <p className="customer-auth-error">{addError}</p>}
             <button type="submit" className="save-sale-button" disabled={addBusy}>{addBusy ? "Adding…" : "Add Staff Member"}</button>
             <button type="button" className="adjust-btn-ghost" onClick={() => setShowAddForm(false)}>Cancel</button>
