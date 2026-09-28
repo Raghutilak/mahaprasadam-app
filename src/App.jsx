@@ -101,6 +101,7 @@ function App() {
 
   // ── Today's Bhoga donations, for the Dashboard summary ──────────
   const [todaysBhogaDonations, setTodaysBhogaDonations] = useState([]);
+  const [tomorrowsBhogaCounts, setTomorrowsBhogaCounts] = useState({});
 
   // ── sweets master table: id per sweet name, seeded once from the
   //    fixed price list, then reused for every sale/inventory write ──
@@ -552,6 +553,9 @@ function App() {
       // const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const localToday = getBusinessDate();
 
+      const [ty, tm, td] = localToday.split("-").map(Number);
+      const localTomorrow = new Date(Date.UTC(ty, tm - 1, td + 1)).toISOString().slice(0, 10);
+
       let primarySucceeded = false;
 
       try {
@@ -588,6 +592,17 @@ function App() {
         }
       } catch (e) {
         console.error("Auto sweet-issue proof load error:", e);
+      }
+
+      try {
+        const { data: tRows, error: tErr } = await sb.from("donations").selectEq("*", "bhoge_date", localTomorrow);
+        if (!tErr && Array.isArray(tRows)) {
+          const counts = {};
+          tRows.forEach((r) => { counts[r.bhoge_type] = (counts[r.bhoge_type] || 0) + 1; });
+          setTomorrowsBhogaCounts(counts);
+        }
+      } catch (e) {
+        console.error("Tomorrow's Bhoga load error:", e);
       }
 
       if (primarySucceeded) return;
@@ -1757,7 +1772,7 @@ function App() {
       <main className="main-content enter-next-page" onKeyDown={handlePageEnter}>
 
         {page === "dashboard" && (<>
-          <header className="page-header"><div><h1>📊 Dashboard</h1><p>--------------------------</p></div><div className="today-date">📅 {today}</div></header>
+          <header className="page-header"><div><h1>📊 Dashboard</h1><br /></div><div className="today-date">📅 {today}</div></header>
           <section className="report-grid">
             <div
               className={`report-card opening-stock-card ${ expandedCard === "opening" ? "expanded" : "" }`}
@@ -2004,7 +2019,7 @@ function App() {
 
           </section>
           <section className="batch-card">
-            <h2>🙏 Today's Bhoga Donations ({todaysBhogaDonations.length})</h2>
+            <h2>🙏 Today's Bhoga Donors ({todaysBhogaDonations.length})</h2>
 
             {todaysBhogaDonations.length === 0 && <p>No Bhoga donations recorded for today yet.</p>}
 
@@ -2037,13 +2052,30 @@ function App() {
               <div className="daily-credit-total" style={{ marginTop: 12 }}>
                 <h2>Today's Bhoga Total: ₹ {todaysBhogaDonations.reduce((a, d) => a + (+d.amount || 0), 0)}</h2>
               </div>
-            )}
+            )}  
           </section>
+
+
+          <section className="batch-card">
+            
+            <h2>
+              🙏 Tomorrow's Bhoga Donors (
+              {["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga"]
+                .reduce((total, n) => total + (tomorrowsBhogaCounts[n] || 0), 0)}
+              )
+            </h2>
+
+            <p style={{ marginTop: 12, fontSize: 16, color: "var(--muted)" }}>
+              {["Balya Bhoga  ", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga"]
+                .map((n) => `${n} ${tomorrowsBhogaCounts[n] || 0}`)
+                .join("  ,  ")}
+            </p>
+          </section>
+
 
           <section className="batch-card">
             <h2>Recent Transactions</h2>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: -8 }}>Synced from Supabase — visible on every device</p>
-
+            
             {[...cloudRecentTransactions,
               ...cashRecords.filter(r => r.synced === false).map(r=>({...r,type:"💵 Cash Sale (⚠️ unsynced)",amount:r.total||r.amount||0})),
               ...paytmRecords.filter(r => r.synced === false).map(r=>({...r,type:`${r.channel||"Paytm"} Sale (⚠️ unsynced)`,amount:r.total||r.amount||0})),

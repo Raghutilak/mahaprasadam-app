@@ -133,6 +133,11 @@ select {
   color: var(--ivory);
 }
 
+
+.batch-card h2 {
+  color: var(--gold);
+}
+
 .batch-header {
   display: flex;
   justify-content: space-between;

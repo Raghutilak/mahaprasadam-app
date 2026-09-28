@@ -305,11 +305,10 @@ function DeityScreen({ photoUrls, label }) {
 // "spans midnight".
 
 const ALTAR_CLOSED_WINDOWS = [
-  [5 * 60 + 0, 7 * 60 + 15, "mangal"],     // 5:00 AM – 7:15 AM
-  [11 * 60 + 30, 12 * 60 + 30, "sringar"], // 11:30 AM – 12:30 PM
-  // [13 * 60 + 0, 16 * 60 + 15, "sringar"],  // 1:00 PM – 4:15 PM
-  [13 * 60 + 0, 18 * 60 + 0, "sringar"],  // 1:00 PM – 6:00 PM
-  [21 * 60 + 0, 4 * 60 + 30, "sringar"],   // 9:00 PM – 4:30 AM (wraps past midnight)
+  [4 * 60 + 58, 7 * 60 + 13, "mangal"],     // 5:00 AM – 7:15 AM
+  [7 * 60 + 30, 12 * 60 + 30, "sringar"], // 11:30 AM – 12:30 PM
+  [12 * 60 + 55, 16 * 60 + 15, "sringar"],  // 1:00 PM – 4:15 PM
+  [20 * 60 + 55, 4 * 60 + 25, "sringar"],   // 9:00 PM – 4:30 AM (wraps past midnight)
 ];
 
 // Wraps whichever screen is currently showing. If that screen's content is
