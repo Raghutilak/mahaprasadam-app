@@ -35,6 +35,82 @@ select {
   font: inherit;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   Shared date / month picker styling
+   ONE place controls how every <input type="date"> and
+   <input type="month"> looks (Donations, Credit reports, Daily/Sale
+   report, Orders...). Change the --picker-* tokens to re-theme all of
+   them at once. Layout (width/padding) stays with each screen.
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  --picker-bg: var(--surface);
+  --picker-border: var(--border);
+  --picker-text: var(--ivory);
+  --picker-accent: var(--gold);
+}
+
+/* ":root" in the selector lifts specificity so per-screen input rules
+   (.donation-search, .credit-report-dates input ...) can't re-introduce
+   mismatched colours. */
+:root input[type="date"],
+:root input[type="month"] {
+  color-scheme: dark;              /* dark native calendar popup */
+  accent-color: var(--picker-accent); /* gold selected day / highlights */
+  background-color: var(--picker-bg);
+  color: var(--picker-text);
+  border: 1px solid var(--picker-border);
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 38px;
+}
+
+:root input[type="date"]:hover,
+:root input[type="month"]:hover {
+  border-color: var(--picker-accent);
+}
+
+:root input[type="date"]:focus,
+:root input[type="month"]:focus {
+  outline: none;
+  border-color: var(--picker-accent);
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
+}
+
+/* Native calendar icon. color-scheme: dark above already draws it light,
+   so NO invert filter here (inverting it made the icon black on dark). */
+:root input[type="date"]::-webkit-calendar-picker-indicator,
+:root input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.9;
+  cursor: pointer;
+  padding: 2px;
+}
+
+:root input[type="date"]::-webkit-calendar-picker-indicator:hover,
+:root input[type="month"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Optional wrapper (Donations screens) — keeps the field full width */
+.date-picker-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.date-picker-wrap input[type="date"],
+.date-picker-wrap input[type="month"] {
+  width: 100%;
+}
+
+/* The date pill in the Daily Report header: blend the picker into the pill */
+/* (Daily Report pill) */
+:root .today-date input[type="date"] {
+  margin-left: 6px;
+  min-height: 0;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
 .app {
   display: flex;
   min-height: 100vh;

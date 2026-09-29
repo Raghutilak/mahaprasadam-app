@@ -610,30 +610,6 @@
   margin-top: 4px;
 }
 
-.date-picker-wrap {
-  position: relative;
-  width: 100%;
-}
-
-.date-input {
-  width: 100%;
-  cursor: pointer;
-  padding-right: 42px;
-}
-
-.date-icon {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 20px;
-  pointer-events: none;
-}
-
-.date-input::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-}
-
 .donation-add-another-btn {
   display: inline-flex;
   align-items: center;
@@ -710,3 +686,6 @@
 .donation-bhoga-chip .chip-remove:hover {
   background: rgba(224, 85, 85, 0.15);
 }
+
+
+

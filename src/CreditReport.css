@@ -108,15 +108,6 @@
   min-width: 160px;
 }
 
-/* Native date-picker fix: without this, the browser draws the calendar
-   icon (and on some browsers the popup itself) in its light-theme colors,
-   which nearly disappears against this dark input background. Telling the
-   browser this control lives on a dark surface makes it draw a matching
-   dark-theme icon/popup instead. */
-.credit-report-dates input[type="date"] {
-  color-scheme: dark;
-}
-
 
 .credit-report-status {
   color: var(--muted);

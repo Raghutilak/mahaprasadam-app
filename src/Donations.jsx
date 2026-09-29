@@ -44,13 +44,34 @@ const getBhogaDay = (dateString) => {
   });
 };
 
+// Normalise any date-like value (Postgres date, timestamp/timestamptz string,
+// DD-MM-YYYY, or a cached value) to "YYYY-MM-DD" — the exact format that
+// <input type="date"> produces. Without this, the Bhoga Date filter compared
+// e.g. "2026-09-29T00:00:00+00:00" against "2026-09-29" and never matched.
+const toISODate = (value) => {
+  if (!value) return "";
+  const str = String(value).trim();
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+};
+
+// Open the native calendar when the user clicks anywhere on the field
+// (not just the tiny icon). Ignored silently on browsers without showPicker().
+const openPicker = (e) => {
+  try { e.currentTarget.showPicker?.(); } catch { /* not allowed / unsupported */ }
+};
+
 const PAYMENT_MODES = ["Cash", "UPI", "Online Transfer (NEFT/IMPS)", "Cheque", "DD"];
 
 const today = getBusinessDate;
 const fmt = (n) => (n ?? 0).toLocaleString("en-IN");
 const fmtDate = (dateStr) => {
-  if (!dateStr) return "—";
-  const [y, m, d] = dateStr.split("-");
+  const iso = toISODate(dateStr);
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
   return `${d}-${m}-${y}`;
 };
 
@@ -73,8 +94,8 @@ function usePersistentState(key, initialValue) {
 const rowToRecord = (d) => ({
   id: String(d.id),
   trNo: d.tr_no,
-  donationDate: d.donation_date,
-  bhogeDate: d.bhoge_date,
+  donationDate: toISODate(d.donation_date),
+  bhogeDate: toISODate(d.bhoge_date),
   bhogaDay: d.bhoga_day,
   bhogeType: d.bhoge_type,
   bhogaTypeId: d.bhoga_type_id,
@@ -131,6 +152,9 @@ function Donations() {
   const [view, setView] = useState("entry"); // entry | list | amounts | preachers
   const [msg, setMsg] = useState({ text: "", type: "ok" });
   const [search, setSearch] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [bhogaDateFilter, setBhogaDateFilter] = useState("");
+
   // ── Label printing — pick up to 9 records for one A4 sheet of equal-size labels
   const [selectedForLabels, setSelectedForLabels] = useState([]);
   const [showLabelPrint, setShowLabelPrint] = useState(false);
@@ -252,206 +276,217 @@ function Donations() {
   };
 
   const handleSubmit = async () => {
+    if (isSaving) return; // a save is already in flight — ignore extra clicks
     const err = validate();
     if (err) return showMsg("⚠️ " + err, "warn");
+    setIsSaving(true);
+    try {
 
-    // Automatically calculate Bhoga Day from Bhoga Date
-    const bhogaDay = getBhogaDay(form.bhogeDate);
+      // Automatically calculate Bhoga Day from Bhoga Date
+      const bhogaDay = getBhogaDay(form.bhogeDate);
 
-    // ── EDIT MODE: reconcile the whole TR group in one go ──────────
-    // The form's chip list may now differ from the original group:
-    //  - a chip whose Bhoga name matches an original row  → UPDATE that row
-    //  - an original row whose Bhoga name is no longer in the chips → DELETE it
-    //  - a chip with a Bhoga name that wasn't in the original group → INSERT it
-    if (editingGroup) {
-      const originalByType = new Map(editingGroup.map((r) => [r.bhogeType, r.id]));
-      const currentTypes = new Set(selectedBhogas.map((b) => b.type));
+      // ── EDIT MODE: reconcile the whole TR group in one go ──────────
+      // The form's chip list may now differ from the original group:
+      //  - a chip whose Bhoga name matches an original row  → UPDATE that row
+      //  - an original row whose Bhoga name is no longer in the chips → DELETE it
+      //  - a chip with a Bhoga name that wasn't in the original group → INSERT it
+      if (editingGroup) {
+        const originalByType = new Map(editingGroup.map((r) => [r.bhogeType, r.id]));
+        const currentTypes = new Set(selectedBhogas.map((b) => b.type));
 
-      const toUpdate = selectedBhogas.filter((b) => originalByType.has(b.type));
-      const toInsert = selectedBhogas.filter((b) => !originalByType.has(b.type));
-      const toDeleteIds = editingGroup.filter((r) => !currentTypes.has(r.bhogeType)).map((r) => r.id);
+        const toUpdate = selectedBhogas.filter((b) => originalByType.has(b.type));
+        const toInsert = selectedBhogas.filter((b) => !originalByType.has(b.type));
+        const toDeleteIds = editingGroup.filter((r) => !currentTypes.has(r.bhogeType)).map((r) => r.id);
 
-      const sharedFieldsForRpc = {
+        const sharedFieldsForRpc = {
+          tr_no: form.trNo,
+          donation_date: form.donationDate,
+          bhoge_date: form.bhogeDate,
+          bhoga_day: bhogaDay,
+          donor_name: form.donorName,
+          donor_mobile: form.donorMobile,
+          preacher_name: form.preacherName,
+          preacher_mobile: form.preacherMobile,
+          preacher_id: preacherIdByName.get(form.preacherName) || null,
+          payment_mode: form.paymentMode,
+          verified_by_asst: form.verifiedByAsst,
+        };
+        const sharedFieldsLocal = {
+          trNo: form.trNo,
+          donationDate: form.donationDate,
+          bhogeDate: form.bhogeDate,
+          bhogaDay: bhogaDay,
+          donorName: form.donorName,
+          donorMobile: form.donorMobile,
+          preacherName: form.preacherName,
+          preacherMobile: form.preacherMobile,
+          preacherId: preacherIdByName.get(form.preacherName) || null,
+          paymentMode: form.paymentMode,
+          verifiedByAsst: form.verifiedByAsst,
+        };
+
+        // One atomic RPC call — update / delete / insert all happen inside a
+        // single Postgres transaction, so a failure partway through can never
+        // leave the TR half-updated (e.g. an old Bhoga deleted but the new
+        // one never actually inserted).
+        let rpcResult;
+        try {
+          const { data, error } = await sb.rpc("update_donation_with_bhogas", {
+            p_shared: sharedFieldsForRpc,
+            p_updates: toUpdate.map((b) => ({
+              id: originalByType.get(b.type),
+              bhoge_type: b.type,
+              bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
+              amount: +b.amount || 0,
+            })),
+            p_delete_ids: toDeleteIds,
+            p_inserts: toInsert.map((b) => ({
+              bhoge_type: b.type,
+              bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
+              amount: +b.amount || 0,
+            })),
+          });
+          if (error) throw error;
+          rpcResult = data;
+        } catch (e) {
+          console.error("Donation update error:", e);
+          showMsg(`❌ Could not save changes to Supabase (${e.status || ""} ${e.message || "permission denied"}). Nothing was changed — please try again.`, "warn");
+          return;
+        }
+
+        const insertedIds = (rpcResult && rpcResult.inserted_ids) || [];
+        const insertedLocal = toInsert.map((b, i) => ({
+          id: insertedIds[i] != null ? String(insertedIds[i]) : Date.now() + i,
+          ...sharedFieldsLocal,
+          bhogeType: b.type,
+          bhogaTypeId: bhogaTypeIdByName.get(b.type) || null,
+          amount: +b.amount || 0,
+          enteredAt: new Date().toLocaleString("en-IN"),
+        }));
+
+        const updatedTypeSet = new Set(toUpdate.map((b) => b.type));
+        const deletedIdSet = new Set(toDeleteIds);
+
+        setDonations((prev) => {
+          const kept = prev
+            .filter((d) => !deletedIdSet.has(d.id))
+            .map((d) => {
+              if (editingGroup.some((r) => r.id === d.id) && updatedTypeSet.has(d.bhogeType)) {
+                const match = toUpdate.find((b) => b.type === d.bhogeType);
+                return {
+                  ...d,
+                  ...sharedFieldsLocal,
+                  bhogeType: match.type,
+                  bhogaTypeId: bhogaTypeIdByName.get(match.type) || null,
+                  amount: +match.amount || 0,
+                };
+              }
+              return d;
+            });
+          return [...insertedLocal, ...kept];
+        });
+
+        setEditingGroup(null);
+        setForm({ ...emptyForm, donationDate: today() });
+        setSelectedBhogas([]);
+        showMsg(
+          `✅ Updated TR ${form.trNo} — ${toUpdate.length} changed, ${toInsert.length} added, ${toDeleteIds.length} removed.`
+        );
+        return;
+      }
+
+      // ── NEW ENTRY MODE ───────────────────────────────────────────────
+      // One row per selected Bhoga — all sharing the same TR No, donor,
+      // preacher, date and payment mode.
+      const preacherId = preacherIdByName.get(form.preacherName) || null;
+
+      const rows = selectedBhogas.map((b) => ({
         tr_no: form.trNo,
         donation_date: form.donationDate,
         bhoge_date: form.bhogeDate,
         bhoga_day: bhogaDay,
+        bhoge_type: b.type,
+        bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
         donor_name: form.donorName,
         donor_mobile: form.donorMobile,
+        amount: +b.amount || 0,
         preacher_name: form.preacherName,
         preacher_mobile: form.preacherMobile,
-        preacher_id: preacherIdByName.get(form.preacherName) || null,
+        preacher_id: preacherId,
         payment_mode: form.paymentMode,
         verified_by_asst: form.verifiedByAsst,
-      };
-      const sharedFieldsLocal = {
+      }));
+
+      const localRecords = selectedBhogas.map((b, i) => ({
+        id: Date.now() + i,
         trNo: form.trNo,
         donationDate: form.donationDate,
         bhogeDate: form.bhogeDate,
         bhogaDay: bhogaDay,
-        donorName: form.donorName,
-        donorMobile: form.donorMobile,
-        preacherName: form.preacherName,
-        preacherMobile: form.preacherMobile,
-        preacherId: preacherIdByName.get(form.preacherName) || null,
-        paymentMode: form.paymentMode,
-        verifiedByAsst: form.verifiedByAsst,
-      };
-
-      // One atomic RPC call — update / delete / insert all happen inside a
-      // single Postgres transaction, so a failure partway through can never
-      // leave the TR half-updated (e.g. an old Bhoga deleted but the new
-      // one never actually inserted).
-      let rpcResult;
-      try {
-        const { data, error } = await sb.rpc("update_donation_with_bhogas", {
-          p_shared: sharedFieldsForRpc,
-          p_updates: toUpdate.map((b) => ({
-            id: originalByType.get(b.type),
-            bhoge_type: b.type,
-            bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
-            amount: +b.amount || 0,
-          })),
-          p_delete_ids: toDeleteIds,
-          p_inserts: toInsert.map((b) => ({
-            bhoge_type: b.type,
-            bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
-            amount: +b.amount || 0,
-          })),
-        });
-        if (error) throw error;
-        rpcResult = data;
-      } catch (e) {
-        console.error("Donation update error:", e);
-        showMsg(`❌ Could not save changes to Supabase (${e.status || ""} ${e.message || "permission denied"}). Nothing was changed — please try again.`, "warn");
-        return;
-      }
-
-      const insertedIds = (rpcResult && rpcResult.inserted_ids) || [];
-      const insertedLocal = toInsert.map((b, i) => ({
-        id: insertedIds[i] != null ? String(insertedIds[i]) : Date.now() + i,
-        ...sharedFieldsLocal,
         bhogeType: b.type,
         bhogaTypeId: bhogaTypeIdByName.get(b.type) || null,
+        donorName: form.donorName,
+        donorMobile: form.donorMobile,
         amount: +b.amount || 0,
+        preacherName: form.preacherName,
+        preacherMobile: form.preacherMobile,
+        preacherId,
+        paymentMode: form.paymentMode,
+        verifiedByAsst: form.verifiedByAsst,
         enteredAt: new Date().toLocaleString("en-IN"),
       }));
 
-      const updatedTypeSet = new Set(toUpdate.map((b) => b.type));
-      const deletedIdSet = new Set(toDeleteIds);
+      try {
+        const { data: saved, error } = await sb.from("donations").insert(rows);
 
-      setDonations((prev) => {
-        const kept = prev
-          .filter((d) => !deletedIdSet.has(d.id))
-          .map((d) => {
-            if (editingGroup.some((r) => r.id === d.id) && updatedTypeSet.has(d.bhogeType)) {
-              const match = toUpdate.find((b) => b.type === d.bhogeType);
-              return {
-                ...d,
-                ...sharedFieldsLocal,
-                bhogeType: match.type,
-                bhogaTypeId: bhogaTypeIdByName.get(match.type) || null,
-                amount: +match.amount || 0,
-              };
-            }
-            return d;
+        if (error) {
+          console.error("Donation save error:", error);
+          showMsg("❌ Donation could not be saved.", "warn");
+          return;
+        }
+
+        if (Array.isArray(saved)) {
+          saved.forEach((row, i) => {
+            if (localRecords[i]) localRecords[i].id = String(row.id);
           });
-        return [...insertedLocal, ...kept];
-      });
+        }
 
-      setEditingGroup(null);
-      setForm({ ...emptyForm, donationDate: today() });
-      setSelectedBhogas([]);
-      showMsg(
-        `✅ Updated TR ${form.trNo} — ${toUpdate.length} changed, ${toInsert.length} added, ${toDeleteIds.length} removed.`
-      );
-      return;
-    }
-
-    // ── NEW ENTRY MODE ───────────────────────────────────────────────
-    // One row per selected Bhoga — all sharing the same TR No, donor,
-    // preacher, date and payment mode.
-    const preacherId = preacherIdByName.get(form.preacherName) || null;
-
-    const rows = selectedBhogas.map((b) => ({
-      tr_no: form.trNo,
-      donation_date: form.donationDate,
-      bhoge_date: form.bhogeDate,
-      bhoga_day: bhogaDay,
-      bhoge_type: b.type,
-      bhoga_type_id: bhogaTypeIdByName.get(b.type) || null,
-      donor_name: form.donorName,
-      donor_mobile: form.donorMobile,
-      amount: +b.amount || 0,
-      preacher_name: form.preacherName,
-      preacher_mobile: form.preacherMobile,
-      preacher_id: preacherId,
-      payment_mode: form.paymentMode,
-      verified_by_asst: form.verifiedByAsst,
-    }));
-
-    const localRecords = selectedBhogas.map((b, i) => ({
-      id: Date.now() + i,
-      trNo: form.trNo,
-      donationDate: form.donationDate,
-      bhogeDate: form.bhogeDate,
-      bhogaDay: bhogaDay,
-      bhogeType: b.type,
-      bhogaTypeId: bhogaTypeIdByName.get(b.type) || null,
-      donorName: form.donorName,
-      donorMobile: form.donorMobile,
-      amount: +b.amount || 0,
-      preacherName: form.preacherName,
-      preacherMobile: form.preacherMobile,
-      preacherId,
-      paymentMode: form.paymentMode,
-      verifiedByAsst: form.verifiedByAsst,
-      enteredAt: new Date().toLocaleString("en-IN"),
-    }));
-
-    try {
-      const { data: saved, error } = await sb.from("donations").insert(rows);
-
-      if (error) {
-        console.error("Donation save error:", error);
+      } catch (e) {
+        console.error("Donation save error:", e);
         showMsg("❌ Donation could not be saved.", "warn");
         return;
       }
 
-      if (Array.isArray(saved)) {
-        saved.forEach((row, i) => {
-          if (localRecords[i]) localRecords[i].id = String(row.id);
-        });
-      }
+      setDonations((prev) => [...localRecords, ...prev]);
 
-    } catch (e) {
-      console.error("Donation save error:", e);
-      showMsg("❌ Donation could not be saved.", "warn");
-      return;
+      // Remember donor/TR/preacher details so they can be quickly reused
+      // for a fresh TR via the "Add another Bhoga" button below.
+      setLastSaved({
+        trNo: form.trNo,
+        donorName: form.donorName,
+        donorMobile: form.donorMobile,
+        preacherName: form.preacherName,
+        preacherMobile: form.preacherMobile,
+        paymentMode: form.paymentMode,
+      });
+
+      // Fully clear the form after a successful save.
+      setForm({ ...emptyForm, donationDate: today() });
+      setSelectedBhogas([]);
+
+      showMsg(
+        `✅ Saved ${localRecords.length} Bhoga${localRecords.length > 1 ? "s" : ""} under TR ${form.trNo}!`
+      );
+
+    } finally {
+
+      setIsSaving(false);
+    
     }
 
-    setDonations((prev) => [...localRecords, ...prev]);
-
-    // Remember donor/TR/preacher details so they can be quickly reused
-    // for a fresh TR via the "Add another Bhoga" button below.
-    setLastSaved({
-      trNo: form.trNo,
-      donorName: form.donorName,
-      donorMobile: form.donorMobile,
-      preacherName: form.preacherName,
-      preacherMobile: form.preacherMobile,
-      paymentMode: form.paymentMode,
-    });
-
-    // Fully clear the form after a successful save.
-    setForm({ ...emptyForm, donationDate: today() });
-    setSelectedBhogas([]);
-
-    showMsg(
-      `✅ Saved ${localRecords.length} Bhoga${localRecords.length > 1 ? "s" : ""} under TR ${form.trNo}!`
-    );
   };
 
+  
   // Load an existing record's full details back into the form so it can
   // be corrected and/or verified in one save, instead of only toggling
   // the verified flag blind. If this record was entered together with
@@ -645,11 +680,12 @@ function Donations() {
 
   const filtered = (donations || []).filter(
     (d) =>
-      !search ||
-      d.donorName?.toLowerCase().includes(search.toLowerCase()) ||
-      d.trNo?.includes(search) ||
-      d.preacherName?.toLowerCase().includes(search.toLowerCase()) ||
-      d.bhogeType?.toLowerCase().includes(search.toLowerCase())
+      (!bhogaDateFilter || toISODate(d.bhogeDate) === bhogaDateFilter) &&
+      (!search ||
+        d.donorName?.toLowerCase().includes(search.toLowerCase()) ||
+        d.trNo?.includes(search) ||
+        d.preacherName?.toLowerCase().includes(search.toLowerCase()) ||
+        d.bhogeType?.toLowerCase().includes(search.toLowerCase()))
   );
 
   const byTR = {};
@@ -762,9 +798,8 @@ function Donations() {
                       }))
                     }
                     className="date-input"
+                    onClick={openPicker}
                   />
-
-                  <span className="date-icon">📅</span>
                 </div>
               </div>
 
@@ -883,9 +918,12 @@ function Donations() {
               </div>
             </div>
 
-            <button className="donation-submit-btn" onClick={handleSubmit}>
-              {editingGroup ? "💾 Update Donation Entry" : "🙏 Save Donation Entry"}
+
+            <button className="donation-submit-btn" onClick={handleSubmit} disabled={isSaving}>
+              {isSaving ? "⏳ Saving..." : editingGroup ? "💾 Update Donation Entry" : "🙏 Save Donation Entry"}
             </button>
+
+
             {editingGroup && (
               <button type="button" className="donation-btn-ghost" style={{ width: "100%", marginTop: 8 }} onClick={handleCancelEdit}>
                 Cancel Edit
@@ -951,13 +989,30 @@ function Donations() {
       )}
 
 
-
       {/* ── ALL RECORDS ── */}
       {view === "list" && (
         <div className="donation-card">
           <div className="donation-card-title">
             <span>📋 All Donation Records ({filtered.length})</span>
             <input className="donation-search" placeholder="Search donor, TR No, preacher..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          
+            <div className="date-picker-wrap" style={{ width: 200, maxWidth: "100%" }}>
+              <input
+                type="date"
+                className="donation-search date-input"
+                value={bhogaDateFilter}
+                onChange={(e) => setBhogaDateFilter(e.target.value)}
+                onClick={openPicker}
+                title="Filter by Bhoga Date"
+              />
+            </div>
+
+            {bhogaDateFilter && (
+              <button type="button" className="donation-btn-ghost" onClick={() => setBhogaDateFilter("")}>
+                *Clear date  
+              </button>
+            )}
+            
             <button
               type="button"
               className="donation-print-labels-btn"

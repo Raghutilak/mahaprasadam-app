@@ -25,6 +25,10 @@ see `.gitignore`. If you'd rather keep it somewhere else, pass
 review CSVs into `import_output/`. Nothing is sent to Supabase.
 
 From a live Google Sheet:
+1.RESET Other data
+2.Paste Page data and enter closing stock
+3.set supabase
+4.cd scripts
 
 ```
 
