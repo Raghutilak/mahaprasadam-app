@@ -2029,11 +2029,25 @@ function App() {
                   <strong>{d.donorName} — {d.bhogeType}</strong>
                   <span>TR: {d.trNo} · Preacher: {d.preacherName} · {d.verifiedByAsst ? "✓ Verified" : "Pending verification"}</span>
                   <div className="bhoga-proof-row">
-                    <span className={`bhoga-proof-badge ${todaysAutoSweetIssueByBhoga[d.bhogeType] ? "green" : "amber"}`}>
-                      {todaysAutoSweetIssueByBhoga[d.bhogeType]
-                        ? `🏭 Sweet issue auto-recorded — ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
-                        : "🏭 Sweet issue not yet auto-recorded"}
-                    </span>
+                    {d.bhogeType === "Udayastama" ? (
+                      // Udayastama = all 6 Bhogas of the day, so show how many of the six
+                      // scheduled sweet issues have been auto-recorded so far.
+                      (() => {
+                        const six = ["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga"];
+                        const done = six.filter((n) => todaysAutoSweetIssueByBhoga[n]).length;
+                        return (
+                          <span className={`bhoga-proof-badge ${done === 6 ? "green" : "amber"}`}>
+                            {`🏭 Sweet issues auto-recorded — ${done} of 6 Bhogas`}
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className={`bhoga-proof-badge ${todaysAutoSweetIssueByBhoga[d.bhogeType] ? "green" : "amber"}`}>
+                        {todaysAutoSweetIssueByBhoga[d.bhogeType]
+                          ? `🏭 Sweet issue auto-recorded — ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
+                          : "🏭 Sweet issue not yet auto-recorded"}
+                      </span>
+                    )}
                     <button
                       type="button"
                       className={`bhoga-proof-badge bhoga-proof-btn ${d.deliveredToDonor ? "green" : "amber"}`}
@@ -2060,13 +2074,13 @@ function App() {
             
             <h2>
               🙏 Tomorrow's Bhoga Donors (
-              {["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga"]
+              {["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga", "Udayastama"]
                 .reduce((total, n) => total + (tomorrowsBhogaCounts[n] || 0), 0)}
               )
             </h2>
 
             <p style={{ marginTop: 12, fontSize: 16, color: "var(--muted)" }}>
-              {["Balya Bhoga  ", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga"]
+              {["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga", "Udayastama"]
                 .map((n) => `${n} ${tomorrowsBhogaCounts[n] || 0}`)
                 .join("  ,  ")}
             </p>

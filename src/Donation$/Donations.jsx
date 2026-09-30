@@ -44,34 +44,13 @@ const getBhogaDay = (dateString) => {
   });
 };
 
-// Normalise any date-like value (Postgres date, timestamp/timestamptz string,
-// DD-MM-YYYY, or a cached value) to "YYYY-MM-DD" — the exact format that
-// <input type="date"> produces. Without this, the Bhoga Date filter compared
-// e.g. "2026-09-29T00:00:00+00:00" against "2026-09-29" and never matched.
-const toISODate = (value) => {
-  if (!value) return "";
-  const str = String(value).trim();
-  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  return "";
-};
-
-// Open the native calendar when the user clicks anywhere on the field
-// (not just the tiny icon). Ignored silently on browsers without showPicker().
-const openPicker = (e) => {
-  try { e.currentTarget.showPicker?.(); } catch { /* not allowed / unsupported */ }
-};
-
 const PAYMENT_MODES = ["Cash", "UPI", "Online Transfer (NEFT/IMPS)", "Cheque", "DD"];
 
 const today = getBusinessDate;
 const fmt = (n) => (n ?? 0).toLocaleString("en-IN");
 const fmtDate = (dateStr) => {
-  const iso = toISODate(dateStr);
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
   return `${d}-${m}-${y}`;
 };
 
@@ -94,8 +73,8 @@ function usePersistentState(key, initialValue) {
 const rowToRecord = (d) => ({
   id: String(d.id),
   trNo: d.tr_no,
-  donationDate: toISODate(d.donation_date),
-  bhogeDate: toISODate(d.bhoge_date),
+  donationDate: d.donation_date,
+  bhogeDate: d.bhoge_date,
   bhogaDay: d.bhoga_day,
   bhogeType: d.bhoge_type,
   bhogaTypeId: d.bhoga_type_id,
@@ -121,14 +100,6 @@ function Donations() {
     BHOGA_NAMES_ALL.map((name) => ({ id: null, name, amount: DEFAULT_BHOGA_AMOUNTS[name] }))
   );
   const [preachers, setPreachers] = usePersistentState("sweet-preachers-master", DEFAULT_PREACHERS.map((p) => ({ id: null, ...p })));
-
-  // Donation types in display order: the 7 built-in ones first (ending with
-  // Udayastama), then any extra types the admin adds afterwards.
-  const BUILTIN_TYPE_SET = new Set(BHOGA_NAMES_ALL);
-  const bhogaNames = [
-    ...BHOGA_NAMES_ALL,
-    ...bhogaTypes.map((b) => b.name).filter((n) => !BUILTIN_TYPE_SET.has(n)),
-  ];
 
   // Derived lookup helpers
   const bhogeAmounts = Object.fromEntries(bhogaTypes.map((b) => [b.name, b.amount]));
@@ -163,23 +134,11 @@ function Donations() {
   const [isSaving, setIsSaving] = useState(false);
   const [bhogaDateFilter, setBhogaDateFilter] = useState("");
 
-  // All Records is split by Bhoga Date: "upcoming" = today or later,
-  // "previous" = before today. A record dated today stays in Upcoming for the
-  // whole day and moves to Previous when the (IST) date rolls over.
-  const [recordsTab, setRecordsTab] = useState("upcoming");
-  const [todayIST, setTodayIST] = useState(getBusinessDate());
-  useEffect(() => {
-    // Re-check every minute so an app left open overnight rolls over by itself
-    const t = setInterval(() => setTodayIST(getBusinessDate()), 60000);
-    return () => clearInterval(t);
-  }, []);
-
   // ── Label printing — pick up to 9 records for one A4 sheet of equal-size labels
   const [selectedForLabels, setSelectedForLabels] = useState([]);
   const [showLabelPrint, setShowLabelPrint] = useState(false);
   const [editAmounts, setEditAmounts] = useState({ ...bhogeAmounts });
   const [syncNote, setSyncNote] = useState("");
-  const [newType, setNewType] = useState({ name: "", amount: "" });
 
   const [showAddPreacher, setShowAddPreacher] = useState(false);
   const [newPreacher, setNewPreacher] = useState({ name: "", mobile: "" });
@@ -624,7 +583,7 @@ function Donations() {
     // Update each bhoga_types row directly (this is now the source of truth
     // for donations.bhoga_type_id lookups — no more app_settings blob).
     const failures = [];
-    const updates = bhogaNames.map(async (name) => {
+    const updates = BHOGA_NAMES_ALL.map(async (name) => {
       const id = bhogaTypeIdByName.get(name);
       const amount = +editAmounts[name] || 0;
       if (!id) return; // not yet synced with Supabase — will be picked up next load
@@ -642,48 +601,6 @@ function Donations() {
       showMsg(`⚠️ Some amounts could not be saved to Supabase: ${failures.join(", ")}`, "warn");
     } else {
       showMsg("✅ Bhoga amounts updated!");
-    }
-  };
-
-  // ── Extra donation types (added after Udayastama) ────────────────
-  const addDonationType = async () => {
-    const name = newType.name.trim();
-    const amount = +newType.amount || 0;
-    if (!name) { showMsg("⚠️ Enter a name for the new donation type.", "warn"); return; }
-    if (bhogaNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
-      showMsg(`⚠️ "${name}" already exists.`, "warn");
-      return;
-    }
-    let id = null;
-    try {
-      const { data: created, error } = await sb.from("bhoga_types").insert({ name, amount });
-      if (error) throw error;
-      if (Array.isArray(created) && created[0]) id = created[0].id;
-    } catch (e) {
-      console.error("Add donation type error:", e);
-      showMsg("⚠️ Added locally, but could not save to Supabase.", "warn");
-    }
-    setBhogaTypes((prev) => [...prev, { id, name, amount }]);
-    setEditAmounts((a) => ({ ...a, [name]: amount }));
-    setNewType({ name: "", amount: "" });
-    showMsg(`✅ "${name}" added to the donation types.`);
-  };
-
-  const removeDonationType = async (name) => {
-    if (BUILTIN_TYPE_SET.has(name)) return;
-    if ((donations || []).some((d) => d.bhogeType === name)) {
-      showMsg(`⚠️ "${name}" is used in existing donation records and can't be removed.`, "warn");
-      return;
-    }
-    const target = bhogaTypes.find((b) => b.name === name);
-    setBhogaTypes((prev) => prev.filter((b) => b.name !== name));
-    if (target?.id) {
-      const { error } = await sb.from("bhoga_types").delete("id", target.id);
-      if (error) {
-        console.error("Remove donation type error:", error);
-        setBhogaTypes((prev) => [...prev, target]);
-        showMsg(`⚠️ Could not remove "${name}" from Supabase — restored.`, "warn");
-      }
     }
   };
 
@@ -740,32 +657,15 @@ function Donations() {
     });
   };
 
-  // Split by Bhoga Date. Records without a valid bhoga date stay in Upcoming
-  // so they never disappear.
-  const isPreviousRecord = (d) => {
-    const b = toISODate(d.bhogeDate);
-    return !!b && b < todayIST;
-  };
-  const previousCount = (donations || []).filter(isPreviousRecord).length;
-  const upcomingCount = (donations || []).length - previousCount;
-
-  const filtered = (donations || [])
-    .filter(
-      (d) =>
-        (recordsTab === "previous" ? isPreviousRecord(d) : !isPreviousRecord(d)) &&
-        (!bhogaDateFilter || toISODate(d.bhogeDate) === bhogaDateFilter) &&
-        (!search ||
-          d.donorName?.toLowerCase().includes(search.toLowerCase()) ||
-          d.trNo?.includes(search) ||
-          d.preacherName?.toLowerCase().includes(search.toLowerCase()) ||
-          d.bhogeType?.toLowerCase().includes(search.toLowerCase()))
-    )
-    // Upcoming: nearest bhoga first. Previous: most recent first.
-    .sort((a, b) => {
-      const da = toISODate(a.bhogeDate) || "9999-12-31";
-      const db = toISODate(b.bhogeDate) || "9999-12-31";
-      return recordsTab === "previous" ? db.localeCompare(da) : da.localeCompare(db);
-    });
+  const filtered = (donations || []).filter(
+    (d) =>
+      (!bhogaDateFilter || d.bhogeDate === bhogaDateFilter) &&
+      (!search ||
+        d.donorName?.toLowerCase().includes(search.toLowerCase()) ||
+        d.trNo?.includes(search) ||
+        d.preacherName?.toLowerCase().includes(search.toLowerCase()) ||
+        d.bhogeType?.toLowerCase().includes(search.toLowerCase()))
+  );
 
   const byTR = {};
   donations.forEach((d) => {
@@ -800,7 +700,7 @@ function Donations() {
         <div className="donation-header-title">
           <span className="icon">🙏</span>
           <div>
-            <h2>Deity Donation Management</h2>
+            <h2>Bhoga Donation Management</h2>
             <p>Donation entry, records & configuration{syncNote ? ` — ${syncNote}` : ""}</p>
           </div>
         </div>
@@ -877,8 +777,9 @@ function Donations() {
                       }))
                     }
                     className="date-input"
-                    onClick={openPicker}
                   />
+
+                  <span className="date-icon">📅</span>
                 </div>
               </div>
 
@@ -901,7 +802,7 @@ function Donations() {
                 onChange={(e) => addBhoga(e.target.value)}
               >
                 <option value="">— Select Bhoga Name to Add —</option>
-                {bhogaNames
+                {BHOGA_NAMES_ALL
                   .filter((b) => !selectedBhogas.some((sb) => sb.type === b))
                   .map((b) => <option key={b} value={b}>{b} (₹{fmt(bhogeAmounts[b])})</option>)}
               </select>
@@ -1071,39 +972,19 @@ function Donations() {
       {/* ── ALL RECORDS ── */}
       {view === "list" && (
         <div className="donation-card">
-          <div className="donation-subnav donation-records-tabs">
-            <button
-              type="button"
-              className={recordsTab === "upcoming" ? "active" : ""}
-              onClick={() => setRecordsTab("upcoming")}
-            >
-              🔜 Upcoming Records ({upcomingCount})
-            </button>
-            <button
-              type="button"
-              className={recordsTab === "previous" ? "active" : ""}
-              onClick={() => setRecordsTab("previous")}
-            >
-              🕘 Previous Records ({previousCount})
-            </button>
-          </div>
           <div className="donation-card-title">
-            <span>📋 {recordsTab === "previous" ? "Previous" : "Upcoming"} Records ({filtered.length})</span>
+            <span>📋 All Donation Records ({filtered.length})</span>
             <input className="donation-search" placeholder="Search donor, TR No, preacher..." value={search} onChange={(e) => setSearch(e.target.value)} />
           
-            <div className="date-picker-wrap" style={{ width: 200, maxWidth: "100%" }}>
+            <div className="date-picker-wrap" style={{ width: 240, maxWidth: "100%" }}>
               <input
                 type="date"
                 className="donation-search date-input"
                 value={bhogaDateFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setBhogaDateFilter(v);
-                  if (v) setRecordsTab(v < todayIST ? "previous" : "upcoming");
-                }}
-                onClick={openPicker}
+                onChange={(e) => setBhogaDateFilter(e.target.value)}
                 title="Filter by Bhoga Date"
               />
+              <span className="date-icon">📅</span>
             </div>
 
             {bhogaDateFilter && (
@@ -1133,9 +1014,7 @@ function Donations() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={12} style={{ textAlign: "center", color: "#94a3b8", padding: 30 }}>
-                    {recordsTab === "previous" ? "No previous records found" : "No upcoming records found"}
-                  </td></tr>
+                  <tr><td colSpan={12} style={{ textAlign: "center", color: "#94a3b8", padding: 30 }}>No records found</td></tr>
                 )}
                 {filtered.map((d) => (
                   <tr key={d.id}>
@@ -1199,12 +1078,11 @@ function Donations() {
             <span>💰 Bhoga Donation Amounts</span>
             <button className="donation-btn-primary" style={{ flex: "unset" }} onClick={handleSaveAmounts}>✓ Save Changes</button>
           </div>
-          {bhogaNames.map((b) => (
+          {BHOGA_NAMES_ALL.map((b) => (
             <div key={b} className="donation-amount-row">
               <div>
                 <div className="name">{b}</div>
                 {b === "Udayastama" && <div className="hint">Full day — all 6 Bhogas combined</div>}
-                {!BUILTIN_TYPE_SET.has(b) && <div className="hint">Added donation type</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ color: "#94a3b8" }}>₹</span>
@@ -1213,35 +1091,9 @@ function Donations() {
                   value={editAmounts[b] || ""}
                   onChange={(e) => setEditAmounts((a) => ({ ...a, [b]: +e.target.value }))}
                 />
-                {!BUILTIN_TYPE_SET.has(b) && (
-                  <button type="button" className="donation-delete-btn" onClick={() => removeDonationType(b)}>🗑️</button>
-                )}
               </div>
             </div>
           ))}
-
-          {/* Add another donation type (appears in the list after Udayastama) */}
-          <div className="donation-add-type">
-            <div className="name">➕ Add new donation type</div>
-            <div className="donation-add-type-row">
-              <input
-                className="donation-search"
-                placeholder="Type name (e.g. Ekadashi Seva)"
-                value={newType.name}
-                onChange={(e) => setNewType((t) => ({ ...t, name: capitalizeFirst(e.target.value) }))}
-              />
-              <input
-                className="donation-search"
-                type="number"
-                placeholder="Amount ₹"
-                value={newType.amount}
-                onChange={(e) => setNewType((t) => ({ ...t, amount: e.target.value }))}
-              />
-              <button type="button" className="donation-btn-primary" style={{ flex: "unset" }} onClick={addDonationType}>
-                Add
-              </button>
-            </div>
-          </div>
           <div className="donation-sync-note">
             💡 Udayastama should equal the sum of all 6 Bhoga amounts. Current sum: ₹
             {fmt(BHOGA_NAMES_ALL.filter((b) => b !== "Udayastama").reduce((a, b) => a + (editAmounts[b] || 0), 0))}

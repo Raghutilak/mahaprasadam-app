@@ -44,7 +44,7 @@ sweet-accounts/
 │   ├── DepartmentCredit.jsx/.css # Credit sales to departments
 │   ├── IndividualCredit.jsx     # Credit sales to individuals
 │   ├── CreditReport.jsx/.css    # Credit ledger/report views
-│   ├── Donations.jsx/.css       # Bhoga donation tracking
+│   ├── Donations.jsx/.css       # Deity donation tracking
 │   ├── DonationLabelPrint.jsx/.css # Printable donation labels
 │   ├── DailyReport.jsx          # Daily summary report
 │   └── index.css                # Global styles

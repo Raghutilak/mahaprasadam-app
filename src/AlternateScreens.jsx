@@ -146,7 +146,9 @@ function DonorsScreen() {
       try {
         const { data, error } = await sb.from("donations").selectFilter(
           "id,tr_no,donor_name,bhoge_type,amount",
-          `donation_date=eq.${todayISO()}&order=id.desc`
+          // Donated today OR its Bhoga is today — so an Udayastama (or any
+          // advance donation) offered today is shown on the screen too.
+          `or=(donation_date.eq.${todayISO()},bhoge_date.eq.${todayISO()})&order=id.desc`
         );
         if (error) throw error;
         if (!cancelled) setRows(data || []);
@@ -175,7 +177,10 @@ function DonorsScreen() {
                   {d.donor_name || "Anonymous"}
                   {d.tr_no && <span className="alt-donor-trno"> (TR No: {d.tr_no})</span>}
                 </div>
-                <div className="alt-donor-purpose">{d.bhoge_type || "—"}</div>
+                <div className="alt-donor-purpose">
+                  {d.bhoge_type || "—"}
+                  {d.bhoge_type === "Udayastama" && " — Full Day (all 6 Bhogas)"}
+                </div>
                 <div className="alt-donor-amount">₹{d.amount}</div>
               </div>
             ))}
