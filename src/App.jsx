@@ -740,20 +740,6 @@ function App() {
         }
       }
 
-      // setSchedule((currentSchedule) =>
-      //   currentSchedule.map((b) => {
-      //     const note = `Scheduled batch — ${b.time}`; const match = receiptByNote.get(note);
-      //     if (!match) return { ...b, received: false, receiptId: null };
-      //     const syncedItems = itemsByReceiptId.get(match);
-      //     return { ...b, received: true, receiptId: match, items: syncedItems || b.items };
-      //   })
-      // );
-
-
-
-
-
-
       setSchedule((currentSchedule) =>
         currentSchedule.map((b) => {
           const note = `Scheduled batch — ${b.time}`;
@@ -777,12 +763,6 @@ function App() {
           };
         })
       );
-
-
-
-
-
-
 
     } catch (e) {
       console.error("Schedule received-status load error:", e);
@@ -1560,9 +1540,6 @@ function App() {
 
     setPaytmSale(createEmptyItems());
   };
-
-
-
 
   const [customerSession, setCustomerSession] = useState(undefined); // undefined = still checking
 

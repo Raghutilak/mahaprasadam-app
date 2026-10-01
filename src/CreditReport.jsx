@@ -1092,7 +1092,7 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
 
     // A4's printable height at the same 96px/inch, 12mm-margin math as
     // the width above (273mm content height).
-    const ONE_PAGE_HEIGHT_PX = 1032;
+    const ONE_PAGE_HEIGHT_PX = 1005;
     // Never shrink past this — beyond it the report is genuinely too long
     // for one page at a legible size, and printing at the floor is still
     // more useful than an illegible sliver of text.

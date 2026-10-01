@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 import_legacy_sheet.py
 ────────────────────────────────────────────────────────────────────────
@@ -92,6 +92,8 @@ import sys
 from datetime import datetime, timedelta
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # ── Supabase connection ──────────────────────────────────────────────
 # --push needs a service-role key (see the module docstring above for
@@ -103,6 +105,68 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_BIsAjxfeXUa90vWHV2
 
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 JSON_HEADERS = {**HEADERS, "Content-Type": "application/json"}
+
+# One persistent HTTP session for the whole push.  The old implementation
+# created a brand-new requests connection for every GET/POST, which made the
+# import much more vulnerable to connection resets (Windows 10054).
+#
+# IMPORTANT: POST/RPC retries are intentionally NOT enabled at the urllib3
+# adapter level.  A connection can be reset after Supabase has already
+# committed a transaction; blindly replaying a POST could duplicate a sale.
+# We therefore retry only connection failures BEFORE a response exists, and
+# only once, in the request helpers below.
+SUPABASE_CONNECT_TIMEOUT = 10
+SUPABASE_READ_TIMEOUT = 60
+SUPABASE_RETRY_DELAY = 2
+
+SUPABASE_SESSION = requests.Session()
+SUPABASE_SESSION.headers.update(HEADERS)
+
+# GETs are safe to retry automatically. POSTs are not: see rpc() below.
+GET_RETRY = Retry(
+    total=3,
+    connect=3,
+    read=3,
+    status=3,
+    backoff_factor=0.75,
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"GET"}),
+    respect_retry_after_header=True,
+)
+SUPABASE_SESSION.mount("https://", HTTPAdapter(max_retries=GET_RETRY, pool_connections=10, pool_maxsize=10))
+SUPABASE_SESSION.mount("http://", HTTPAdapter(max_retries=GET_RETRY, pool_connections=10, pool_maxsize=10))
+
+
+def _request_timeout():
+    return (SUPABASE_CONNECT_TIMEOUT, SUPABASE_READ_TIMEOUT)
+
+
+def _post_with_safe_connection_retry(url, *, headers, json):
+    """POST once, then retry only connection failures with no HTTP response.
+
+    A requests.ConnectionError means no HTTP response reached this process.
+    That is still not a perfect guarantee that the server did not commit the
+    transaction, so the retry is deliberately limited to one attempt.
+    HTTP error responses are never automatically replayed.
+    """
+    try:
+        return SUPABASE_SESSION.post(
+            url,
+            headers=headers,
+            json=json,
+            timeout=_request_timeout(),
+        )
+    except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError):
+        import time
+        print("    ⚠️ Supabase connection reset before a response; retrying once in "
+              f"{SUPABASE_RETRY_DELAY}s...")
+        time.sleep(SUPABASE_RETRY_DELAY)
+        return SUPABASE_SESSION.post(
+            url,
+            headers=headers,
+            json=json,
+            timeout=_request_timeout(),
+        )
 
 
 def _check_push_key():
@@ -486,7 +550,8 @@ def write_all_csvs(records, review_needed, closing_stock_by_date):
 # ══════════════════════════════════════════════════════════════════
 
 def rpc(fn_name, params):
-    r = requests.post(f"{SUPABASE_URL}/rest/v1/rpc/{fn_name}", headers=JSON_HEADERS, json=params)
+    url = f"{SUPABASE_URL}/rest/v1/rpc/{fn_name}"
+    r = _post_with_safe_connection_retry(url, headers=JSON_HEADERS, json=params)
     if not r.ok:
         raise RuntimeError(f"{fn_name} failed ({r.status_code}): {r.text}")
     return r.json()
@@ -500,16 +565,30 @@ def get_or_create_master_id(table, name, mobile=None, cache=None):
     key = (table, name.strip().lower())
     if key in cache:
         return cache[key]
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/{table}", headers=HEADERS, params={"select": "id,name", "name": f"ilike.{name.strip()}"})
+    r = SUPABASE_SESSION.get(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        headers=HEADERS,
+        params={"select": "id,name", "name": f"ilike.{name.strip()}"},
+        timeout=_request_timeout(),
+    )
     r.raise_for_status()
     existing = r.json()
     if existing:
         cache[key] = existing[0]["id"]
         return existing[0]["id"]
+
     payload = {"name": name}
     if mobile:
         payload["mobile"] = mobile
-    r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}", headers={**JSON_HEADERS, "Prefer": "return=representation"}, json=[payload])
+
+    # This POST can create a master record.  It is intentionally not retried
+    # after a connection failure because the server might have committed it.
+    r = SUPABASE_SESSION.post(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        headers={**JSON_HEADERS, "Prefer": "return=representation"},
+        json=[payload],
+        timeout=_request_timeout(),
+    )
     r.raise_for_status()
     created = r.json()[0]["id"]
     cache[key] = created
@@ -517,7 +596,12 @@ def get_or_create_master_id(table, name, mobile=None, cache=None):
 
 
 def load_sweet_ids():
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/sweets", headers=HEADERS, params={"select": "id,name"})
+    r = SUPABASE_SESSION.get(
+        f"{SUPABASE_URL}/rest/v1/sweets",
+        headers=HEADERS,
+        params={"select": "id,name"},
+        timeout=_request_timeout(),
+    )
     r.raise_for_status()
     return {row["name"]: row["id"] for row in r.json()}
 
@@ -687,10 +771,11 @@ def push_all(records, sweet_ids):
 def upsert_table(table, rows, on_conflict):
     if not rows:
         return
-    r = requests.post(
+    r = SUPABASE_SESSION.post(
         f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}",
         headers={**JSON_HEADERS, "Prefer": "return=representation,resolution=merge-duplicates"},
         json=rows,
+        timeout=_request_timeout(),
     )
     if not r.ok:
         raise RuntimeError(f"{table} upsert failed ({r.status_code}): {r.text}")
@@ -843,6 +928,7 @@ def main():
             sys.exit(1)
 
     print("\nLoading sweet IDs from Supabase...")
+    print("  Supabase HTTP transport: pooled session, 10s connect / 60s read timeout, GET retries enabled")
     sweet_ids = load_sweet_ids()
     missing = [s for s in SWEET_ORDER if s not in sweet_ids]
     if missing:
@@ -850,9 +936,13 @@ def main():
         sys.exit(1)
 
     print("\nPushing to Supabase...")
-    push_all(records, sweet_ids)
-    compute_and_push_inventory_snapshots(records, closing_stock_by_date, sweet_ids)
+    try:
+        push_all(records, sweet_ids)
+        compute_and_push_inventory_snapshots(records, closing_stock_by_date, sweet_ids)
+    finally:
+        SUPABASE_SESSION.close()
 
 
 if __name__ == "__main__":
     main()
+
