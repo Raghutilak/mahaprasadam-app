@@ -33,7 +33,7 @@
   cursor: pointer;
 }
 .alt-setup-hint { font-size: 13px; margin-top: 20px; }
-
+ 
 .alt-fullscreen-root {
   position: fixed;
   inset: 0;
@@ -45,8 +45,8 @@
   cursor: none;
 }
 .alt-fullscreen-root:hover { cursor: default; }
-
-
+ 
+ 
 .alt-autoscroll {
   flex: 1;
   width: 100%;
@@ -62,8 +62,8 @@
   text-align: center;
   overflow: visible; /* was: hidden — this was silently clipping tall screens */
 }
-
-
+ 
+ 
 .alt-screen-title {
   font-size: clamp(32px, 5vw, 64px);
   color: var(--gold-light);
@@ -71,7 +71,7 @@
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
 }
 .alt-screen-loading { font-size: 24px; color: var(--muted); }
-
+ 
 /* ── Screen 1: Available Sweets ── */
 .alt-screen-sweets { background: radial-gradient(circle at top, #3d1a00, var(--bg)); }
 .alt-sweets-grid {
@@ -106,14 +106,14 @@
 }
 .alt-sweet-name { font-size: 28px; font-weight: 700; color: var(--ivory); }
 .alt-sweet-price { font-size: 24px; color: var(--gold); font-weight: 700; }
-
+ 
 /* ── Screen 2: Today's Bhoga Donors ── */
 .alt-screen-donors { background: radial-gradient(circle at top, #2d1200, var(--bg)); }
 .alt-donors-list {
   width: 100%;
   max-width: 1100px;
-  max-height: 70vh;
-  overflow-y: auto;
+  /* No inner scroll box / scroll bar: the whole screen auto-scrolls
+     (see AutoScroll), so the list just grows to its full height. */
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -139,7 +139,7 @@
   color: var(--gold);
   font-weight: 700;
 }
-
+ 
 /* ── Screen 3: Festival ── */
 .alt-screen-festival { background: radial-gradient(circle at top, #4a1400, var(--bg)); }
 .alt-festival-date { font-size: clamp(20px, 2.5vw, 30px); color: var(--muted); margin-bottom: 30px; }
@@ -157,7 +157,7 @@
   border-radius: 14px;
   padding: 20px 32px;
 }
-
+ 
 /* ── Screen 4: Deities (altar-closed darshan) ── */
 .alt-screen-deities { background: radial-gradient(circle at top, #241046, var(--bg)); }
 .alt-deity-photo-single {
@@ -170,7 +170,7 @@
   border: 1px solid var(--border);
   background: var(--surface);
 }
-
+ 
 /* ── Hidden admin controls ── */
 .alt-controls {
   position: fixed;
@@ -205,3 +205,5 @@
 }
 .alt-controls-interval { color: var(--gold-light); font-weight: 700; min-width: 48px; text-align: center; }
 .alt-controls-exit { background: var(--red) !important; border-color: var(--red) !important; color: #fff !important; }
+ 
+

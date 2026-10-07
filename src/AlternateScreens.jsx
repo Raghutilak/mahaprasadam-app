@@ -146,9 +146,10 @@ function DonorsScreen() {
       try {
         const { data, error } = await sb.from("donations").selectFilter(
           "id,tr_no,donor_name,bhoge_type,amount",
-          // Donated today OR its Bhoga is today — so an Udayastama (or any
-          // advance donation) offered today is shown on the screen too.
-          `or=(donation_date.eq.${todayISO()},bhoge_date.eq.${todayISO()})&order=id.desc`
+          // Only donations whose BHOGA DATE is today (not the date the donation
+          // was recorded) — so advance donations for later dates don't show up
+          // early, and advance donations offered today do.
+          `bhoge_date=eq.${todayISO()}&order=id.desc`
         );
         if (error) throw error;
         if (!cancelled) setRows(data || []);
@@ -167,7 +168,7 @@ function DonorsScreen() {
     <div className="alt-screen alt-screen-donors">
       <h1 className="alt-screen-title">🙏 Today's Bhoga Donors</h1>
       {rows === null && <p className="alt-screen-loading">Loading...</p>}
-      {rows && rows.length === 0 && <p className="alt-screen-loading">No donations recorded yet today.</p>}
+      {rows && rows.length === 0 && <p className="alt-screen-loading">No Bhoga donations for today yet.</p>}
       {rows && rows.length > 0 && (
         <>
           <div className="alt-donors-list">
@@ -596,6 +597,8 @@ export default function AlternateScreens() {
     </div>
   );
 }
+
+
 
 
 

@@ -3,7 +3,7 @@ import sb from "./supabaseClient";
 import { departments } from "./DepartmentCredit";
 import { getBusinessDate, addBusinessDays } from "./dateUtils";
 
-const FUTURE_DAY_CAP = 100;
+const FUTURE_DAY_CAP = 10;
 
 const tomorrowISO = () => addBusinessDays(1);
 const todayISO = getBusinessDate;
