@@ -2057,10 +2057,19 @@ function App() {
             </h2>
 
             <p style={{ marginTop: 12, fontSize: 16, color: "var(--muted)" }}>
-              {["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga", "Udayastama"]
-                .map((n) => `${n} ${tomorrowsBhogaCounts[n] || 0}`)
-                .join("  ,  ")}
+              
+              {(() => {
+                const shown = ["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga", "Udayastama"]
+                  .filter((n) => (tomorrowsBhogaCounts[n] || 0) > 0)
+                  .map((n) => `${n} ${tomorrowsBhogaCounts[n]}`);
+                return shown.length > 0 ? shown.join("  ,  ") : "No donors yet for tomorrow.";
+              })()}
+
             </p>
+
+
+
+
           </section>
 
 
