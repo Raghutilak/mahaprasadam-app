@@ -24,7 +24,7 @@ const HOLDS_TOPIC = "order-desk-holds";
 // Unique per browser tab; used as the presence key.
 export const MY_KEY = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-let snapshot = { bookers: [], holds: [], placed: [] };
+let snapshot = { bookers: [], holds: [], placed: [], connected: false };
 const listeners = new Set();
 const emit = (patch) => {
   snapshot = { ...snapshot, ...patch };
@@ -75,7 +75,8 @@ const connect = () => {
     emit({ placed: [...snapshot.placed.filter((p) => p.id !== entry.id), entry] });
   });
   bookersCh.subscribe((status) => {
-    if (status === "SUBSCRIBED") { bookersReady = true; syncBookerTrack(); }
+    if (status === "SUBSCRIBED") { bookersReady = true; emit({ connected: true }); syncBookerTrack(); }
+    else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") { bookersReady = false; emit({ connected: false }); }
   });
 
   holdsCh = supabaseStaffAuth.channel(HOLDS_TOPIC, { config: { presence: { key: MY_KEY } } });
@@ -96,7 +97,7 @@ const disconnect = () => {
   if (holdsCh) supabaseStaffAuth.removeChannel(holdsCh);
   bookersCh = null; holdsCh = null;
   bookersReady = false; holdsReady = false;
-  emit({ bookers: [], holds: [], placed: [] });
+  emit({ bookers: [], holds: [], placed: [], connected: false });
 };
 
 const acquire = () => {
@@ -153,13 +154,43 @@ export const startBookingWatch = () => {
 
 // Pass the booking info while the staff member is filling the form, or null when idle.
 export const setMyBooking = (info) => {
-  myBooking = info ? { ...info, since: info.since || Date.now() } : null;
+  if (!info) { myBooking = null; }
+  else {
+    // Keep the original start time while the same person stays in the same department,
+    // so their place in the department's queue doesn't reset on every re-render.
+    const same = myBooking && String(myBooking.staffId) === String(info.staffId)
+      && normDept(myBooking.department) === normDept(info.department);
+    myBooking = { ...info, since: same ? myBooking.since : Date.now() };
+  }
   syncBookerTrack();
 };
 
 export const announcePlaced = (info) => {
   if (!bookersCh || !bookersReady) return;
   bookersCh.send({ type: "broadcast", event: "placed", payload: { ...info, at: Date.now() } });
+};
+
+// ── One person at a time per department ──────────────────────────
+// Everyone with the booking form open for a department is in that department's queue,
+// ordered by when they opened it. Only the FIRST one (the "owner") may book; the rest can
+// see who is ahead of them. Each browser tab counts separately, so a second tab of the
+// same person is blocked too. When the owner books, closes the form or goes idle, the next
+// in line becomes the owner automatically.
+const normDept = (d) => String(d || "").trim().toUpperCase();
+
+export const getDeptLock = (desk, department, active = true) => {
+  const dept = normDept(department);
+  if (!dept) return { status: "free", owner: null, others: [] };
+  const queue = desk.bookers
+    .filter((b) => normDept(b.department) === dept)
+    .sort((a, b) => (a.since - b.since) || (a.key < b.key ? -1 : 1));
+  const others = queue.filter((b) => b.key !== MY_KEY);
+  // If live updates aren't connected, don't lock anyone out of booking.
+  if (!desk.connected) return { status: "free", owner: null, others };
+  if (!active) return { status: "idle", owner: queue[0] || null, others };
+  if (!queue.some((b) => b.key === MY_KEY)) return { status: "checking", owner: queue[0] || null, others };
+  if (queue[0].key === MY_KEY) return { status: "owner", owner: queue[0], others };
+  return { status: "blocked", owner: queue[0], others };
 };
 
 // ── React hook ───────────────────────────────────────────────────

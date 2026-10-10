@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import sb from "./supabaseClient";
 import { departments } from "./DepartmentCredit";
 import { getBusinessDate, addBusinessDays } from "./dateUtils";
-import { startBookingWatch, setMyBooking, announcePlaced, useOrderDesk, isOnHold } from "./orderDesk";
+import { startBookingWatch, setMyBooking, announcePlaced, useOrderDesk, isOnHold, getDeptLock } from "./orderDesk";
 
 const FUTURE_DAY_CAP = 10;
 
@@ -41,7 +41,37 @@ export default function StaffBookOrder({ currentStaff }) {
   const onHold = isOnHold(desk, currentStaff?.id);
   const [bookingActive, setBookingActive] = useState(true);
   const skipActivateRef = useRef(false);
+
+  const lock = getDeptLock(desk, department, bookingActive);
+  const lockedOut = lock.status === "blocked" || lock.status === "checking";
+  const IDLE_MINUTES = 5;
+  const [idleReleased, setIdleReleased] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const idleReleasedRef = useRef(false);
+
   useEffect(() => startBookingWatch(), []);
+
+  useEffect(() => {
+    const touch = () => {
+      lastActivityRef.current = Date.now();
+      if (idleReleasedRef.current) {
+        idleReleasedRef.current = false;
+        setIdleReleased(false);
+        setBookingActive(true);
+      }
+    };
+    const events = ["pointerdown", "keydown", "input"];
+    events.forEach((e) => window.addEventListener(e, touch, true));
+    const timer = setInterval(() => {
+      if (!idleReleasedRef.current && Date.now() - lastActivityRef.current > IDLE_MINUTES * 60 * 1000) {
+        idleReleasedRef.current = true;
+        setIdleReleased(true);
+        setBookingActive(false);
+      }
+    }, 15000);
+    return () => { events.forEach((e) => window.removeEventListener(e, touch, true)); clearInterval(timer); };
+  }, []);
+
   useEffect(() => {
     if (!currentStaff?.id) return;
     setMyBooking(bookingActive ? { staffId: currentStaff.id, name: currentStaff.name, department } : null);
@@ -128,6 +158,10 @@ export default function StaffBookOrder({ currentStaff }) {
 
   const handleSubmit = async () => {
     setResult(null);
+
+    if (lock.status === "blocked") { setResult({ ok: false, message: `⛔ ${lock.owner?.name || "Someone"} is already placing an order for ${department}. Please wait until they finish.` }); return; }
+    if (lock.status === "checking" || lock.status === "idle") { setResult({ ok: false, message: "Please wait a moment and press Book Order again." }); return; }
+
     if (onHold) { setResult({ ok: false, message: "⛔ The counter has put your booking on hold (not enough stock right now). Please check with the counter." }); return; }
     if (atCap) { setResult({ ok: false, message: `You already have ${ACTIVE_ORDER_CAP} active orders — wait for one to be fulfilled or cancelled first.` }); return; }
     if (!department) { setResult({ ok: false, message: "Please choose a department." }); return; }
@@ -170,6 +204,22 @@ export default function StaffBookOrder({ currentStaff }) {
         Book for today (capped by what's actually available right now) or a future day (capped at {FUTURE_DAY_CAP} per item —
         use the message box below for anything more than that, or any other request).
       </p>
+
+      {lock.status === "blocked" && (
+        <p style={{ fontSize: 14, color: "salmon", fontWeight: 700 }}>
+          ⛔ {lock.owner?.name} is already placing an order for {department}. You can look, but you can't book until they finish, close this page or go idle.
+        </p>
+      )}
+      {lock.others.length > 0 && (
+        <p style={{ fontSize: 13, color: "var(--muted)" }}>
+          👥 Also open for {department}: {lock.others.map((o) => `${o.name}${lock.owner && o.key === lock.owner.key ? " (placing now)" : ""}`).join(", ")}
+        </p>
+      )}
+      {idleReleased && (
+        <p style={{ fontSize: 13, color: "var(--muted)" }}>
+          💤 Paused after {IDLE_MINUTES} minutes without activity so others in your department can book. Click anywhere to continue.
+        </p>
+      )}
 
       {onHold && (
         <p style={{ fontSize: 14, color: "salmon", fontWeight: 700 }}>
@@ -254,7 +304,7 @@ export default function StaffBookOrder({ currentStaff }) {
             <input
               type="number" min="0" max={capFor(s.name)} style={{ width: 70 }}
               value={quantities[s.id] || ""}
-              disabled={capFor(s.name) === 0}
+              disabled={capFor(s.name) === 0 || lockedOut}
               onChange={(e) => setQty(s.id, s.name, e.target.value)}
             />
           </div>
