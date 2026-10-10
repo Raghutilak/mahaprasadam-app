@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import sb from "./supabaseClient";
 import { departments } from "./DepartmentCredit";
 import { getBusinessDate, addBusinessDays } from "./dateUtils";
-import { startBookingWatch, setMyBooking, announcePlaced, useOrderDesk, isOnHold } from "./Orderdesk";
+import { startBookingWatch, setMyBooking, announcePlaced, useOrderDesk, isOnHold } from "./orderDesk";
 
 const FUTURE_DAY_CAP = 10;
 
