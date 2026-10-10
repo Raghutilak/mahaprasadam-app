@@ -19,7 +19,8 @@ import AdminLogin from "./AdminLogin";
 import ManagePasswords from "./ManagePasswords";
 import sb from "./supabaseClient";
 import { exportToGoogleSheet } from './lib/googleSheetExport';
-import { TABS, canAccess, normalizeStaffRow } from "./data/staffAccess";
+import { TABS, canAccess, normalizeStaffRow, isOrderDesk } from "./data/staffAccess";
+import OrderDeskBanner from "./OrderDeskBanner";
 import { supabaseStaffAuth } from "./supabaseStaffAuthClient";
 
 function usePersistentState(key, initialValue) {
@@ -1747,6 +1748,12 @@ function App() {
       </aside>
 
       <main className="main-content enter-next-page" onKeyDown={handlePageEnter}>
+        {isOrderDesk(currentStaff) && (
+          <OrderDeskBanner
+            currentStaff={currentStaff}
+            onOpenOrders={canAccess(currentStaff, TABS.ORDERS) ? () => navigateTo("orders") : undefined}
+          />
+        )}
 
         {page === "dashboard" && (<>
           <header className="page-header"><div><h1>📊 Dashboard</h1><br /></div><div className="today-date">📅 {today}</div></header>
@@ -2056,7 +2063,7 @@ function App() {
               )
             </h2>
 
-            <p style={{ marginTop: 12, fontSize: 16, color: "var(--muted)" }}>
+            <p style={{ marginTop: 12, fontSize: 18, color: "var(--muted)" }}>
               
               {(() => {
                 const shown = ["Balya Bhoga", "Sakalika Bhoga", "Raja Bhoga", "Vaikalika Bhoga", "Sandhya Bhoga", "Shayana Bhoga", "Udayastama"]

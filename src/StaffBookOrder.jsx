@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import sb from "./supabaseClient";
 import { departments } from "./DepartmentCredit";
 import { getBusinessDate, addBusinessDays } from "./dateUtils";
+import { startBookingWatch, setMyBooking, announcePlaced, useOrderDesk, isOnHold } from "./Orderdesk";
 
 const FUTURE_DAY_CAP = 10;
 
@@ -35,6 +36,16 @@ export default function StaffBookOrder({ currentStaff }) {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { ok, message }
+
+  const desk = useOrderDesk();
+  const onHold = isOnHold(desk, currentStaff?.id);
+  const [bookingActive, setBookingActive] = useState(true);
+  const skipActivateRef = useRef(false);
+  useEffect(() => startBookingWatch(), []);
+  useEffect(() => {
+    if (!currentStaff?.id) return;
+    setMyBooking(bookingActive ? { staffId: currentStaff.id, name: currentStaff.name, department } : null);
+  }, [bookingActive, department, currentStaff?.id, currentStaff?.name]);
 
   const refreshActiveOrderCount = async () => {
     if (!currentStaff?.id) return;
@@ -110,8 +121,14 @@ export default function StaffBookOrder({ currentStaff }) {
     return created?.[0]?.id || null;
   };
 
+  useEffect(() => {
+    if (skipActivateRef.current) { skipActivateRef.current = false; return; }
+    setBookingActive(true);
+  }, [quantities, specialMessage, department, carrierId, dayChoice, futureDate]);
+
   const handleSubmit = async () => {
     setResult(null);
+    if (onHold) { setResult({ ok: false, message: "⛔ The counter has put your booking on hold (not enough stock right now). Please check with the counter." }); return; }
     if (atCap) { setResult({ ok: false, message: `You already have ${ACTIVE_ORDER_CAP} active orders — wait for one to be fulfilled or cancelled first.` }); return; }
     if (!department) { setResult({ ok: false, message: "Please choose a department." }); return; }
     if (itemsToSubmit.length === 0) { setResult({ ok: false, message: "Choose a quantity for at least one item." }); return; }
@@ -128,6 +145,9 @@ export default function StaffBookOrder({ currentStaff }) {
       });
       if (error) throw error;
       setResult({ ok: true, message: `✅ Order booked for ${isFuture ? futureDate : "today"}.` });
+      announcePlaced({ staffId: currentStaff?.id, name: currentStaff?.name, department });
+      skipActivateRef.current = true;
+      setBookingActive(false);
       setQuantities({});
       setSpecialMessage("");
       setCarrierId("");
@@ -150,6 +170,12 @@ export default function StaffBookOrder({ currentStaff }) {
         Book for today (capped by what's actually available right now) or a future day (capped at {FUTURE_DAY_CAP} per item —
         use the message box below for anything more than that, or any other request).
       </p>
+
+      {onHold && (
+        <p style={{ fontSize: 14, color: "salmon", fontWeight: 700 }}>
+          ⛔ The counter has put your booking on hold because there isn't enough stock right now. You can't book until they release it.
+        </p>
+      )}
 
       {activeOrderCount !== null && (
         <p style={{ fontSize: 13, color: atCap ? "salmon" : "var(--muted)" }}>
@@ -251,7 +277,7 @@ export default function StaffBookOrder({ currentStaff }) {
 
       {result && <p style={{ color: result.ok ? "lightgreen" : "salmon" }}>{result.message}</p>}
 
-      <button className="save-sale-button" onClick={handleSubmit} disabled={submitting || loadingStock || atCap}>
+      <button className="save-sale-button" onClick={handleSubmit} disabled={submitting || loadingStock || atCap || onHold}>
         {submitting ? "Booking…" : "📦 Book Order"}
       </button>
     </section>

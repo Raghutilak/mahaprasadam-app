@@ -70,6 +70,9 @@ export const canAccess = (currentStaff, tabKey) => {
   return Array.isArray(currentStaff.allowedTabs) && currentStaff.allowedTabs.includes(tabKey);
 };
 
+export const isOrderDesk = (currentStaff) =>
+  !!currentStaff && (currentStaff.role === "admin" || canAccess(currentStaff, TABS.ORDERS));
+
 // Tabs pre-checked when adding a brand-new staff member in "Manage Passwords".
 // ORDERS is no longer pre-checked — it's a specifically-granted permission now
 // (see the ALL_TABS note above), not a default every new staff member gets.
