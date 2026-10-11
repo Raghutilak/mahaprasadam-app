@@ -56,8 +56,6 @@ export const addBusinessDays = (days, anchorISO = getBusinessDate()) => {
 };
 
 
-
-
 // ── Darshan image cache date ────────────────────────────────────────────
 // GitHub Actions updates the six Darshan photos at 12:30 AM IST.
 // Keep using yesterday's cache tag during the midnight hour so the
@@ -68,7 +66,7 @@ export const addBusinessDays = (days, anchorISO = getBusinessDate()) => {
 
 export const getDarshanCacheDate = () => {
   const businessDate = getBusinessDate();
-  const { hour } = getBusinessTime();
+  const hour = Number(getBusinessTime().slice(0,2));
 
   return hour === 0
     ? addBusinessDays(-1, businessDate)

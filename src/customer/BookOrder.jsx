@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
 import { supabaseAuth } from "../supabaseAuthClient";
+import { getBusinessDate, addBusinessDays } from "../dateUtils";
 
 // `customer` is always a logged-in account's { email, mobile } now — guest
 // checkout was removed (see CustomerPortal.jsx) so there's no untraceable,
 // unauthenticated path into the orders table anymore.
+//
+// Customers can book for TODAY (capped by what's actually available right
+// now) or for a FUTURE day (not checked against today's stock — the order only
+// starts reserving stock on its own date; see get_public_available_stock()).
+// All dates come from dateUtils.js so they agree with the database's IST "today".
 export default function BookOrder({ customer }) {
   const [stock, setStock] = useState([]); // [{ sweet_id, sweet_name, available }]
   const [quantities, setQuantities] = useState({});
   const [mobile, setMobile] = useState(customer?.mobile || "");
+  const [dayChoice, setDayChoice] = useState("today"); // "today" | "future"
+  const [futureDate, setFutureDate] = useState(addBusinessDays(1));
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { ok, message }
+
+  const isFuture = dayChoice === "future";
+  const requestedDate = isFuture ? futureDate : getBusinessDate();
 
   useEffect(() => {
     const loadStock = async () => {
@@ -33,9 +44,22 @@ export default function BookOrder({ customer }) {
     loadStock();
   }, []);
 
+  // Switching back to "today" re-applies today's availability cap to anything already typed.
+  useEffect(() => {
+    if (isFuture) return;
+    setQuantities((q) => {
+      const next = { ...q };
+      stock.forEach((item) => {
+        if ((next[item.sweet_id] || 0) > item.available) next[item.sweet_id] = item.available;
+      });
+      return next;
+    });
+  }, [isFuture, stock]);
+
+  // `max` is today's available stock for a same-day order, or null (no cap) for a future-dated one.
   const setQty = (sweetId, value, max) => {
     let qty = Math.max(0, Number(value) || 0);
-    if (qty > max) qty = max;
+    if (max !== null && qty > max) qty = max;
     setQuantities((q) => ({ ...q, [sweetId]: qty }));
   };
 
@@ -46,6 +70,10 @@ export default function BookOrder({ customer }) {
 
     if (items.length === 0) { setResult({ ok: false, message: "Please choose a quantity for at least one item." }); return; }
     if (!mobile.trim()) { setResult({ ok: false, message: "Please enter a mobile number so we can reach you." }); return; }
+    if (isFuture && (!futureDate || futureDate <= getBusinessDate())) {
+      setResult({ ok: false, message: "Please pick a date after today for a future order." });
+      return;
+    }
 
     if (!customer?.email) {
         setResult({
@@ -64,11 +92,19 @@ export default function BookOrder({ customer }) {
       // auth.uid() server-side rather than trusting the email in this payload.
 
       const { error } = await supabaseAuth.rpc("create_customer_order", {
-        p_order: { customer_email: customer.email, customer_mobile: mobile.trim(), notes: null },
+        p_order: {
+          customer_email: customer.email,
+          customer_mobile: mobile.trim(),
+          notes: null,
+          requested_date: requestedDate,
+        },
         p_items: items,
       });
       if (error) throw error;
-      setResult({ ok: true, message: "✅ Order booked! We'll email or call you shortly with the amount to pay and pickup/delivery details." });
+      setResult({
+        ok: true,
+        message: `✅ Order booked for ${isFuture ? futureDate : "today"}! We'll email or call you shortly with the amount to pay and pickup/delivery details.`,
+      });
       setQuantities({});
     } catch (e) {
       console.error("Order booking error:", e);
@@ -87,17 +123,47 @@ export default function BookOrder({ customer }) {
         Choose quantities and book your order. No payment is collected here — we'll contact you with how much to pay and how/where to collect it.
       </p>
 
+      <div className="item-row">
+        <div className="item-name">
+          <strong>Order For</strong>
+          <span>
+            {isFuture
+              ? "Future-dated orders aren't limited by today's stock."
+              : "Today (limited to what's available right now)."}
+          </span>
+        </div>
+        <div>
+          <label style={{ marginRight: 12 }}>
+            <input type="radio" checked={!isFuture} onChange={() => setDayChoice("today")} /> Today
+          </label>
+          <label>
+            <input type="radio" checked={isFuture} onChange={() => setDayChoice("future")} /> Future Day
+          </label>
+          {isFuture && (
+            <div style={{ marginTop: 6 }}>
+              <input
+                type="date"
+                min={addBusinessDays(1)}
+                value={futureDate}
+                onChange={(e) => setFutureDate(e.target.value || addBusinessDays(1))}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {stock.map((item) => (
         <div className="item-row" key={item.sweet_id}>
           <div className="item-name">
             <strong>{item.sweet_name}</strong>
-            <span>Available: {item.available}</span>
+            <span>{isFuture ? "Future-dated order" : `Available: ${item.available}`}</span>
           </div>
           <input
-            type="number" min="0" max={item.available} style={{ width: 70 }}
+            type="number" min="0" style={{ width: 70 }}
+            max={isFuture ? undefined : item.available}
             value={quantities[item.sweet_id] || ""}
-            disabled={item.available === 0}
-            onChange={(e) => setQty(item.sweet_id, e.target.value, item.available)}
+            disabled={!isFuture && item.available === 0}
+            onChange={(e) => setQty(item.sweet_id, e.target.value, isFuture ? null : item.available)}
           />
         </div>
       ))}

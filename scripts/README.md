@@ -24,10 +24,10 @@ see `.gitignore`. If you'd rather keep it somewhere else, pass
 **1. Dry run (always do this first)** — classifies the data and writes
 review CSVs into `import_output/`. Nothing is sent to Supabase.
 
-From a live Google Sheet:
-1.RESET Other data
-2.Paste Page data and enter closing stock
-3.set supabase
+From Google Sheet to Supabase:
+1.RESET Other data (app)
+2.Paste Page data and enter closing stock in g/sheet
+3.set supabase in CMD
 4.cd scripts
 
 ```
