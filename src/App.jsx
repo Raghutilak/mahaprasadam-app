@@ -588,11 +588,7 @@ function App() {
             .forEach((s) => {
               const match = s.notes.match(/Auto-generated — (.+?) \(scheduled/);
               const bhogaType = match ? match[1] : null;
-              if (bhogaType) {
-                const prev = map[bhogaType] || { amount: 0, count: 0 };
-                map[bhogaType] = { amount: prev.amount + (+s.total_amount || 0), count: prev.count + 1 };
-              }
-
+              if (bhogaType) map[bhogaType] = { amount: +s.total_amount || 0 };
             });
           setTodaysAutoSweetIssueByBhoga(map);
         }
@@ -2033,7 +2029,7 @@ function App() {
                     ) : (
                       <span className={`bhoga-proof-badge ${todaysAutoSweetIssueByBhoga[d.bhogeType] ? "green" : "amber"}`}>
                         {todaysAutoSweetIssueByBhoga[d.bhogeType]
-                          ? `🏭 Sweet issue auto-recorded — ${todaysAutoSweetIssueByBhoga[d.bhogeType].count} entr${todaysAutoSweetIssueByBhoga[d.bhogeType].count === 1 ? "y" : "ies"}, ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
+                          ? `🏭 Sweet issue auto-recorded — ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
                           : "🏭 Sweet issue not yet auto-recorded"}
                       </span>
                     )}
