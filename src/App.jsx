@@ -578,6 +578,7 @@ function App() {
       // Cross-check today's department-credit sales for each Bhoga's auto sweet-issue proof — the Auto Bhoga
       // Credit tags its `notes` with "Auto-generated — {bhogaType}", so a match here is proof the sweet issue
       // from the department was actually recorded, independent of the donation row itself.
+      
       try {
         const { data: saleRows, error: saleErr } = await sb.from("sales").selectEq("*", "sale_date", localToday);
         if (!saleErr && Array.isArray(saleRows)) {
@@ -587,7 +588,11 @@ function App() {
             .forEach((s) => {
               const match = s.notes.match(/Auto-generated — (.+?) \(scheduled/);
               const bhogaType = match ? match[1] : null;
-              if (bhogaType) map[bhogaType] = { amount: +s.total_amount || 0 };
+              if (bhogaType) {
+                const prev = map[bhogaType] || { amount: 0, count: 0 };
+                map[bhogaType] = { amount: prev.amount + (+s.total_amount || 0), count: prev.count + 1 };
+              }
+
             });
           setTodaysAutoSweetIssueByBhoga(map);
         }
@@ -2028,7 +2033,7 @@ function App() {
                     ) : (
                       <span className={`bhoga-proof-badge ${todaysAutoSweetIssueByBhoga[d.bhogeType] ? "green" : "amber"}`}>
                         {todaysAutoSweetIssueByBhoga[d.bhogeType]
-                          ? `🏭 Sweet issue auto-recorded — ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
+                          ? `🏭 Sweet issue auto-recorded — ${todaysAutoSweetIssueByBhoga[d.bhogeType].count} entr${todaysAutoSweetIssueByBhoga[d.bhogeType].count === 1 ? "y" : "ies"}, ₹ ${todaysAutoSweetIssueByBhoga[d.bhogeType].amount}`
                           : "🏭 Sweet issue not yet auto-recorded"}
                       </span>
                     )}
