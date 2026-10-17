@@ -7,7 +7,7 @@
 // list of tabs never drifts out of sync between the login table and
 // the sidebar.
 // ══════════════════════════════════════════════════════════════════
-
+ 
 export const TABS = {
   DASHBOARD: "dashboard",
   RECEIVE: "receive",
@@ -25,8 +25,9 @@ export const TABS = {
   PLACE_ORDER: "place-order", // Book an Order — the booking form itself
   MY_ORDERS: "my-orders",     // a staff member's own order history
   ALTERNATE_SCREENS: "alternate_screens", // full-screen rotating display (Sweets / Donors / Festival)
+  KITCHEN_SCREEN: "kitchen_screen",       // Deity kitchen display (Today's / Tomorrow's minimum sweets requirement)
 };
-
+ 
 // Every real tab, in sidebar order — used for the "Admin" role and for
 // the tab-picker checkboxes when adding/editing a staff member.
 //
@@ -51,10 +52,11 @@ export const ALL_TABS = [
   { key: TABS.RESET_OTHER, label: "🧹 Reset Other Data" },
   { key: TABS.EXPORT, label: "📊 Export to Google Sheet" },
   { key: TABS.ALTERNATE_SCREENS, label: "🖥️ Alternate Screens" },
+  { key: TABS.KITCHEN_SCREEN, label: "🍳 Kitchen Display" },
 ];
-
+ 
 export const ALL_TAB_KEYS = ALL_TABS.map((t) => t.key);
-
+ 
 // "My Password" / "Manage Passwords" is deliberately NOT in ALL_TABS / gated
 // by allowed_tabs — every logged-in staff member can always reach it (to
 // change their own password), regardless of what else they're allowed to see.
@@ -69,15 +71,15 @@ export const canAccess = (currentStaff, tabKey) => {
   if (tabKey === TABS.PLACE_ORDER || tabKey === TABS.MY_ORDERS) return true;
   return Array.isArray(currentStaff.allowedTabs) && currentStaff.allowedTabs.includes(tabKey);
 };
-
+ 
 export const isOrderDesk = (currentStaff) =>
   !!currentStaff && (currentStaff.role === "admin" || canAccess(currentStaff, TABS.ORDERS));
-
+ 
 // Tabs pre-checked when adding a brand-new staff member in "Manage Passwords".
 // ORDERS is no longer pre-checked — it's a specifically-granted permission now
 // (see the ALL_TABS note above), not a default every new staff member gets.
 export const DEFAULT_NEW_STAFF_TABS = [TABS.DASHBOARD];
-
+ 
 // Maps a Supabase staff_users row (snake_case) to the shape the rest of the
 // app uses (camelCase), and to a safe default if a column is missing/null.
 // Note: no password field — staff_users holds profile data only now,

@@ -18,11 +18,18 @@ const NEXT_ACTIONS = {
 const fmtWhen = (iso) =>
   new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 
+// Calendar date (YYYY-MM-DD) of a timestamp in IST — matches how the rest of the app treats "the day".
+const istDate = (iso) =>
+  iso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)) : "";
+
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("pending");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [fulfilledFrom, setFulfilledFrom] = useState("");
+  const [fulfilledTo, setFulfilledTo] = useState("");
   const [updatingId, setUpdatingId] = useState(null);
 
   const loadOrders = async () => {
@@ -38,7 +45,7 @@ export default function Orders() {
     // If this list stays empty despite orders existing, that policy is what's missing.
     const { data, error: err } = await sb
       .from("orders")
-      .select("id,status,created_at,customer_email,customer_mobile,notes,department,requested_date,carriers(name,mobile),order_items(quantity,sweets(name))");
+      .select("id,status,created_at,customer_email,customer_mobile,notes,department,requested_date,fulfilled_at,carriers(name,mobile),order_items(quantity,sweets(name))");
     if (err) {
       console.error("Orders load error:", err);
       setError(err.message || "Could not load orders.");
@@ -59,13 +66,28 @@ export default function Orders() {
       console.error("Order status update error:", err);
       alert(`Could not update order (${err.message || "unknown error"}).`);
     } else {
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
+      setOrders((prev) => prev.map((o) => (o.id === orderId
+        ? { ...o, status: nextStatus, fulfilled_at: nextStatus === "fulfilled" ? new Date().toISOString() : o.fulfilled_at }
+        : o)));
     }
     setUpdatingId(null);
   };
 
-  const visibleOrders = filter === "all" ? orders : orders.filter((o) => o.status === filter);
-  const countFor = (status) => (status === "all" ? orders.length : orders.filter((o) => o.status === status).length);
+  // Department + fulfilled-date filters narrow the list first; the status tabs then split what's left.
+  const departmentOptions = Array.from(new Set(orders.map((o) => o.department).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const baseOrders = orders.filter((o) => {
+    if (deptFilter !== "all" && o.department !== deptFilter) return false;
+    if (fulfilledFrom || fulfilledTo) {
+      const d = istDate(o.fulfilled_at);
+      if (!d) return false; // not fulfilled (yet) — has no fulfilled date
+      if (fulfilledFrom && d < fulfilledFrom) return false;
+      if (fulfilledTo && d > fulfilledTo) return false;
+    }
+    return true;
+  });
+  const visibleOrders = filter === "all" ? baseOrders : baseOrders.filter((o) => o.status === filter);
+  const countFor = (status) => (status === "all" ? baseOrders.length : baseOrders.filter((o) => o.status === status).length);
+  const hasExtraFilters = deptFilter !== "all" || fulfilledFrom || fulfilledTo;
 
   return (
     <div>
@@ -93,6 +115,29 @@ export default function Orders() {
             <span className="orders-stat-label">{s === "all" ? "All Orders" : STATUS_LABEL[s]}</span>
           </button>
         ))}
+      </div>
+
+      <div className="orders-filters">
+        <label>
+          Department
+          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+            <option value="all">All departments</option>
+            {departmentOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </label>
+        <label>
+          Fulfilled from
+          <input type="date" value={fulfilledFrom} max={fulfilledTo || undefined} onChange={(e) => setFulfilledFrom(e.target.value)} />
+        </label>
+        <label>
+          Fulfilled to
+          <input type="date" value={fulfilledTo} min={fulfilledFrom || undefined} onChange={(e) => setFulfilledTo(e.target.value)} />
+        </label>
+        {hasExtraFilters && (
+          <button type="button" className="orders-refresh-btn" onClick={() => { setDeptFilter("all"); setFulfilledFrom(""); setFulfilledTo(""); }}>
+            ✖ Clear filters
+          </button>
+        )}
       </div>
 
       {loading && <div className="orders-loading">Loading orders...</div>}
@@ -129,6 +174,7 @@ export default function Orders() {
                   {o.requested_date && <span className="order-mobile">📅 For {o.requested_date}</span>}
                   {o.carriers?.name && <span className="order-mobile">🚚 {o.carriers.name}{o.carriers.mobile ? ` (${o.carriers.mobile})` : ""}</span>}
                   <div className="order-card-when">Booked {fmtWhen(o.created_at)}</div>
+                  {o.fulfilled_at && <div className="order-card-when">📦 Fulfilled {fmtWhen(o.fulfilled_at)}</div>}
                 </div>
                 <span className={`order-status-badge status-${o.status}`}>{STATUS_LABEL[o.status] || o.status}</span>
               </div>

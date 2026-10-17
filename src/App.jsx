@@ -15,11 +15,12 @@ import Orders from "./Orders";
 import StaffBookOrder from "./StaffBookOrder";
 import StaffMyOrders from "./StaffMyOrders";
 import AlternateScreens from "./AlternateScreens";
+import KitchenScreens from "./KitchenScreens";
 import AdminLogin from "./AdminLogin";
 import ManagePasswords from "./ManagePasswords";
 import sb from "./supabaseClient";
 import { exportToGoogleSheet } from './lib/googleSheetExport';
-import { TABS, canAccess, normalizeStaffRow, isOrderDesk } from "./data/staffAccess";
+import { TABS, ALL_TABS, canAccess, normalizeStaffRow, isOrderDesk } from "./data/staffAccess";
 import OrderDeskBanner from "./OrderDeskBanner";
 import { supabaseStaffAuth } from "./supabaseStaffAuthClient";
 
@@ -1332,6 +1333,23 @@ function App() {
     window.location.reload();
   };
 
+  // ── Reset Orders Only — admin-only RPC; deletes every order (and its items), nothing else.
+  const handleResetOrders = async () => {
+    const confirmWord = "RESET ORDERS";
+    const typed = window.prompt(
+      `This will permanently delete ALL orders (pending, confirmed, fulfilled and cancelled) and their items from Supabase. Sales, credit, donations, inventory and staff logins are NOT affected.\n\nType "${confirmWord}" to confirm:`
+    );
+    if (typed !== confirmWord) { alert("Cancelled — confirmation text didn't match."); return; }
+
+    const { error } = await sb.rpc("admin_reset_orders", {});
+    if (error) {
+      alert(`⚠️ Could not clear orders: ${error.message || error.status || "unknown error"}`);
+    } else {
+      alert("✅ All orders cleared.");
+    }
+    window.location.reload();
+  };
+
   const saveDepartmentPayment = async () => {
     const amount = Number(paymentAmount);
     const target = recoveryType === "Individual" ? paymentIndividual : paymentDepartment;
@@ -1589,9 +1607,12 @@ function App() {
   // shouldn't see), bounce them back to the Dashboard rather than leaving
   // them stuck on a blank page.
   useEffect(() => {
-    if (isStaff && page !== "dashboard" && page !== "my-password" && !canAccess(currentStaff, page)
+    if (isStaff && page !== "my-password" && !canAccess(currentStaff, page)
         && !(page === "individual-credit" && canAccess(currentStaff, TABS.CREDIT))) {
-      setPage("dashboard");
+      // Land on the first tab this person is actually allowed (e.g. "reports"
+      // for a Reports-only account) instead of a Dashboard they can't open.
+      const first = ALL_TABS.find((t) => canAccess(currentStaff, t.key));
+      setPage(first ? first.key : "my-password");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStaff, page, isStaff]);
@@ -1738,6 +1759,9 @@ function App() {
           )}
           
 
+          {canAccess(currentStaff, TABS.KITCHEN_SCREEN) && (
+            <button className={page === TABS.KITCHEN_SCREEN ? "active" : ""} onClick={() => navigateTo(TABS.KITCHEN_SCREEN)} > 🍳 Kitchen Display </button>
+          )}
           {canAccess(currentStaff, TABS.ALTERNATE_SCREENS) && (
             <button className={page === TABS.ALTERNATE_SCREENS ? "active" : ""} onClick={() => navigateTo(TABS.ALTERNATE_SCREENS)} > 🖥️ Alternate Screens </button>
           )}
@@ -1756,7 +1780,7 @@ function App() {
           />
         )}
 
-        {page === "dashboard" && (<>
+        {page === "dashboard" && (!isStaff || canAccess(currentStaff, TABS.DASHBOARD)) && (<>
           <header className="page-header"><div><h1>📊 Dashboard</h1><br /></div><div className="today-date">📅 {today}</div></header>
           <section className="report-grid">
             <div
@@ -2192,6 +2216,21 @@ function App() {
             </section>
 
             <section className="batch-card">
+              <h2>📦 Clear Orders Only</h2>
+              <p>
+                Deletes every order (pending, confirmed, fulfilled, cancelled) and its items — nothing
+                else is touched: sales, credit, donations, inventory, master data and staff logins all stay.
+              </p>
+              {currentStaff?.role === "admin" ? (
+                <button className="save-sale-button" style={{ background: "linear-gradient(135deg, #e05555, #ff6b00)" }} onClick={handleResetOrders}>
+                  📦 Clear All Orders
+                </button>
+              ) : (
+                <p style={{ opacity: 0.8 }}>🔒 This bulk-clear action is admin-only.</p>
+              )}
+            </section>
+
+            <section className="batch-card">
               <h2>☢️ Clear Everything Else (Including Master Data)</h2>
               <p>
                 Deletes everything above, PLUS all master data — sweets, departments, account
@@ -2573,6 +2612,7 @@ function App() {
             without the usual page chrome around it once running (it takes
             over the whole browser tab via the Fullscreen API itself). */}
         {page === "alternate_screens" && <AlternateScreens />}
+        {page === "kitchen_screen" && canAccess(currentStaff, TABS.KITCHEN_SCREEN) && <KitchenScreens />}
 
         {page === "payment" && (
           <>

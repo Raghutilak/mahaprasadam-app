@@ -238,3 +238,8 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Department + fulfilled-date filters */
+.orders-filters { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin: 14px 0; }
+.orders-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.orders-filters select, .orders-filters input { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--ivory); }
