@@ -1,23 +1,23 @@
 import { getBusinessDate, getBusinessTime } from "./dateUtils";
 import { supabaseAuth } from "./supabaseAuthClient";
 import CustomerPortal from "./customer/CustomerPortal";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { accountHolders, carriers } from "./data/people";
 import DailyReport from "./DailyReport";
 import "./index.css";
-import DepartmentCredit from "./DepartmentCredit";
-import IndividualCredit from "./IndividualCredit";
-import CreditReport from "./CreditReport";
-import CreditRecoveryReport from "./CreditRecoveryReport";
-import SaleReport from "./SaleReport";
-import Donations from "./Donations";
-import Orders from "./Orders";
-import StaffBookOrder from "./StaffBookOrder";
-import StaffMyOrders from "./StaffMyOrders";
-import AlternateScreens from "./AlternateScreens";
-import KitchenScreens from "./KitchenScreens";
+const DepartmentCredit = lazy(() => import("./DepartmentCredit"));
+const IndividualCredit = lazy(() => import("./IndividualCredit"));
+const CreditReport = lazy(() => import("./CreditReport"));
+const CreditRecoveryReport = lazy(() => import("./CreditRecoveryReport"));
+const SaleReport = lazy(() => import("./SaleReport"));
+const Donations = lazy(() => import("./Donations"));
+const Orders = lazy(() => import("./Orders"));
+const StaffBookOrder = lazy(() => import("./StaffBookOrder"));
+const StaffMyOrders = lazy(() => import("./StaffMyOrders"));
+const AlternateScreens = lazy(() => import("./AlternateScreens"));
+const KitchenScreens = lazy(() => import("./KitchenScreens"));
 import AdminLogin from "./AdminLogin";
-import ManagePasswords from "./ManagePasswords";
+const ManagePasswords = lazy(() => import("./ManagePasswords"));
 import sb from "./supabaseClient";
 import { exportToGoogleSheet } from './lib/googleSheetExport';
 import { TABS, ALL_TABS, canAccess, normalizeStaffRow, isOrderDesk } from "./data/staffAccess";
@@ -1773,6 +1773,7 @@ function App() {
       </aside>
 
       <main className="main-content enter-next-page" onKeyDown={handlePageEnter}>
+      <Suspense fallback={<p style={{ padding: 24, opacity: 0.7 }}>Loading…</p>}>
         {isOrderDesk(currentStaff) && (
           <OrderDeskBanner
             currentStaff={currentStaff}
@@ -2877,6 +2878,7 @@ function App() {
             )}
           </>
         )}
+      </Suspense>
       </main>
     </div>
   );
