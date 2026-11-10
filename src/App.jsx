@@ -1740,9 +1740,7 @@ function App() {
           {canAccess(currentStaff, TABS.REPORTS) && (
             <button className={page === "reports" ? "active" : ""} onClick={() => navigateTo("reports")}>📄 Reports</button>
           )}
-          {canAccess(currentStaff, TABS.CLOSE) && (
-            <button className={page === "close" ? "active" : ""} onClick={() => navigateTo("close")}>🔒 Close Day</button>
-          )}
+          {/* Close Day button removed — the business day is closed automatically at 11:55 PM by the nightly-close-business-day job. */}
           {canAccess(currentStaff, TABS.RESET_DONATION) && (
             <button className={page === "reset_donation" ? "active" : ""} onClick={() => navigateTo("reset_donation")}>🧹 Reset Donation Data</button>
           )}
