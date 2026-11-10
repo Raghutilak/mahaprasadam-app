@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import QRCode from "qrcode";
 import "./CreditReport.css";
 import sb from "./supabaseClient";
 import { departments } from "./DepartmentCredit";
@@ -911,6 +910,8 @@ function CreditReport({ creditType, initialPeriod = "daily", onBack, backLabel =
     let appQrDataUrl = "";
     if (showAppQr) {
       try {
+        // Loaded only now, at print time — keeps the qrcode library out of the Credit Report page bundle.
+        const { default: QRCode } = await import("qrcode");
         appQrDataUrl = await QRCode.toDataURL("https://mahaprasadam-app.vercel.app", { margin: 1, width: 160 });
       } catch (e) {
         console.error("QR code generation failed:", e);

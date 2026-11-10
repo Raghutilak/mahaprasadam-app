@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+
   server: {
     // Listen on all network interfaces (0.0.0.0), not just localhost —
     // required for a phone on the same Wi-Fi to reach this dev server
@@ -21,17 +22,24 @@ export default defineConfig({
       clientPort: 5173,
     },
   },
+
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            },
+            {
+              name: 'supabase',
+              test: /node_modules[\\/]@supabase[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
 })
 
-
-
-// import { defineConfig } from 'vite'
-// import react from '@vitejs/plugin-react'
-
-// export default defineConfig({
-//   plugins: [react()],
-//   server: {
-//     host: '0.0.0.0',
-//     port: 5173,
-//   },
-// })
